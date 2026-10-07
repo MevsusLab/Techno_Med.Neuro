@@ -1,4 +1,5 @@
 import os
+import multiprocessing
 import tempfile
 import threading
 import time
@@ -7,7 +8,7 @@ import cv2
 import mediapipe as mp
 from mediapipe.tasks.python import BaseOptions
 from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions, RunningMode
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QCoreApplication, QThread, Qt, pyqtSignal
 
 
 MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
@@ -83,6 +84,13 @@ class CaptureWorker(QThread):
         self._record_end = None
         self._read_wait_since = None
         self._read_timeout = CAMERA_STARTUP_TIMEOUT
+        self.phase = "starting"
+        self.phase_started = time.perf_counter()
+
+    def _set_phase(self, phase):
+        with self._lock:
+            self.phase = phase
+            self.phase_started = time.perf_counter()
 
     def snapshot(self):
         with self._lock:
@@ -102,6 +110,7 @@ class CaptureWorker(QThread):
             if self.isInterruptionRequested():
                 return
             self.status.emit("MODEL SETUP")
+            self._set_phase("model setup")
             ensure_model(self.isInterruptionRequested)
             if self.isInterruptionRequested():
                 return
@@ -112,10 +121,12 @@ class CaptureWorker(QThread):
                 min_hand_detection_confidence=0.7,
                 min_tracking_confidence=0.5,
             )
+            self._set_phase("model initialization")
             landmarker = HandLandmarker.create_from_options(options)
             if self.isInterruptionRequested():
                 return
             self.status.emit("CAM OPENING")
+            self._set_phase("camera opening")
             capture = cv2.VideoCapture(0)
             if self.isInterruptionRequested():
                 return
@@ -142,6 +153,7 @@ class CaptureWorker(QThread):
                 with self._lock:
                     self._read_wait_since = time.perf_counter()
                     self._read_timeout = CAMERA_STALL_TIMEOUT if has_frame else CAMERA_STARTUP_TIMEOUT
+                self._set_phase("camera read")
                 ret, frame = capture.read()
                 acquired = time.perf_counter()
                 if self.isInterruptionRequested():
@@ -173,6 +185,7 @@ class CaptureWorker(QThread):
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 ts_ms = max(ts_ms + 1, int(acquired * 1000))
                 image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+                self._set_phase("hand inference")
                 result = landmarker.detect_for_video(image, ts_ms)
                 x = y = None
                 if result.hand_landmarks:
@@ -238,9 +251,132 @@ class CaptureWorker(QThread):
             for resource, method in [(capture, "release"), (landmarker, "close")]:
                 if resource is not None:
                     try:
+                        self._set_phase(f"resource {method}")
                         getattr(resource, method)()
                     except Exception as exc:
                         if not self.error:
                             self.error = str(exc) or type(exc).__name__
                             self.reason = "error"
                             self.failed.emit(self.error)
+
+
+def _capture_process(connection, stop, duration, preparation_duration):
+    qt = QCoreApplication([])
+    worker = CaptureWorker(duration=duration, preparation_duration=preparation_duration)
+    statuses = []
+    status_lock = threading.Lock()
+
+    def on_status(text):
+        with status_lock:
+            statuses.append(text)
+
+    worker.status.connect(on_status, Qt.ConnectionType.DirectConnection)
+    try:
+        worker.start()
+        while True:
+            if stop.is_set():
+                worker.requestInterruption()
+            done = worker.wait(0)
+            latest, samples = worker.take_pending()
+            bounds = worker.snapshot()
+            with worker._lock:
+                phase = worker.phase
+                phase_started = worker.phase_started
+            with status_lock:
+                updates = statuses[:]
+                statuses.clear()
+            connection.send((latest, samples, bounds, phase, phase_started, updates,
+                             done, worker.error if done else "", worker.reason))
+            if done:
+                break
+            time.sleep(0.03)
+    except (BrokenPipeError, EOFError, OSError):
+        worker.requestInterruption()
+        worker.wait(500)
+    finally:
+        connection.close()
+    if worker.isRunning():
+        os._exit(1)
+
+
+class ProcessCaptureWorker(CaptureWorker):
+    def __init__(self, duration=15.0, parent=None, preparation_duration=2.0, process_target=_capture_process):
+        super().__init__(duration, parent, preparation_duration)
+        self.process_target = process_target
+
+    def run(self):
+        context = multiprocessing.get_context("spawn")
+        connection, child_connection = context.Pipe(duplex=False)
+        stop = context.Event()
+        process = context.Process(
+            target=self.process_target,
+            args=(child_connection, stop, self.duration, self.preparation_duration),
+            daemon=True,
+        )
+        cancellation_started = None
+        phase = "process startup"
+        phase_started = time.perf_counter()
+        last_packet = phase_started
+        try:
+            process.start()
+            child_connection.close()
+            while True:
+                now = time.perf_counter()
+                if self.isInterruptionRequested() and cancellation_started is None:
+                    cancellation_started = now
+                    stop.set()
+                if connection.poll(0.03):
+                    latest, samples, bounds, phase, phase_started, updates, done, error, reason = connection.recv()
+                    last_packet = time.perf_counter()
+                    with self._lock:
+                        if latest is not None:
+                            self._latest = latest
+                        self._samples.extend(samples)
+                        self._record_start, self._record_end, self._read_wait_since, self._read_timeout = bounds
+                    for text in updates:
+                        self.status.emit(text)
+                    if done:
+                        self.error = error
+                        self.reason = reason
+                        break
+                elif not process.is_alive():
+                    raise RuntimeError(f"Capture process exited unexpectedly (code {process.exitcode})")
+                if cancellation_started is not None:
+                    if now - cancellation_started > 3:
+                        if not self.error:
+                            self.error = f"Capture did not stop during {phase}; its process was released."
+                        self.reason = "error"
+                        break
+                else:
+                    timeout = {
+                        "process startup": 30, "model setup": 75, "model initialization": 15,
+                        "camera opening": 15, "hand inference": 5, "face inference": 5,
+                        "resource release": 3, "resource close": 3,
+                        "camera read": self._read_timeout + 1,
+                    }.get(phase, 10)
+                    if now - phase_started > timeout or now - last_packet > 30:
+                        raise TimeoutError(f"Capture timed out during {phase}; retry the capture.")
+        except Exception as exc:
+            self.error = f"{type(exc).__name__}: {exc}"
+            self.reason = "error"
+        finally:
+            stop.set()
+            if process.pid is not None:
+                process.join(0.5)
+                if process.is_alive():
+                    process.terminate()
+                    process.join(2)
+                if process.is_alive():
+                    process.kill()
+                    process.join(2)
+                if process.is_alive():
+                    self.error = "Capture process could not be released; close the application."
+                    self.reason = "error"
+                else:
+                    process.close()
+            connection.close()
+            child_connection.close()
+            with self._lock:
+                self._read_wait_since = None
+            if self.error:
+                self.failed.emit(self.error)

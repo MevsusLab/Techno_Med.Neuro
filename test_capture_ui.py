@@ -210,6 +210,63 @@ class CaptureUITests(unittest.TestCase):
         worker.finished.emit()
         self.page.engine.analyze.assert_called_once_with(record_start=100.0, record_end=114.95)
 
+    def test_deadline_interruption_race_still_analyzes_completed_capture(self):
+        worker = self.start_capture()
+        self.acquire(worker)
+        worker.bounds = (100.0, 114.95, None)
+        worker.reason = "stopped"
+        self.clock.return_value = 115.05
+        self.page._on_frame()
+        worker.finished.emit()
+        self.page.engine.analyze.assert_called_once_with(record_start=100.0, record_end=114.95)
+        self.assertIsNone(self.page.worker)
+
+    def test_analysis_exception_does_not_escape_completion_or_disable_restart(self):
+        worker = self.start_capture()
+        self.acquire(worker)
+        self.page.engine.analyze.side_effect = TypeError("unexpected keyword argument 'record_start'")
+        finished = Mock()
+        self.page.capture_finished.connect(finished)
+        with patch("app.traceback.print_exc") as logged:
+            worker.finished.emit()
+        logged.assert_called_once()
+        finished.assert_called_once()
+        self.assertEqual(self.page.page_badge.text(), "ANALYSIS ERROR")
+        self.assertIn("record_start", self.page.analysis_detail.text())
+        self.assertTrue(self.page.btn_start.isEnabled())
+        self.assertFalse(self.page.timer.isActive())
+        self.assertIsNone(self.page.worker)
+
+    def test_repeated_completed_captures_use_real_engine_contract(self):
+        self.page.engine = app.TremorEngine()
+        for trial in range(5):
+            with self.subTest(trial=trial):
+                start = 100.0 + trial * 30
+                self.clock.return_value = start
+                worker = self.start_capture()
+                t = start + np.arange(450) / 30
+                worker.bounds = (t[0], t[-1], None)
+                worker.samples = [(ti, float(10 * np.sin(2 * np.pi * 5 * ti)), 0.0) for ti in t]
+                self.clock.return_value = start + 15.0
+                worker.finished.emit()
+                self.assertEqual(self.page.analysis_badge.text(), "COMPLETE")
+                self.assertEqual(self.page.engine.count, 450)
+                self.assertAlmostEqual(float(self.page.m_freq.val.text()), 5, delta=0.2)
+                self.assertTrue(self.page.btn_start.isEnabled())
+                self.assertIsNone(self.page.worker)
+
+    def test_final_frame_processing_exception_still_releases_session(self):
+        worker = self.start_capture()
+        self.acquire(worker)
+        finished = Mock()
+        self.page.capture_finished.connect(finished)
+        with patch.object(self.page, "_on_frame", side_effect=ValueError("bad frame")), patch("app.traceback.print_exc"):
+            worker.finished.emit()
+        finished.assert_called_once()
+        worker.deleteLater.assert_called_once()
+        self.assertIsNone(self.page.worker)
+        self.assertTrue(self.page.btn_start.isEnabled())
+
     def test_failure_in_finished_state_also_prevents_analysis(self):
         worker = self.start_capture()
         self.acquire(worker)

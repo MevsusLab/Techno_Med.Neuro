@@ -1,5 +1,6 @@
 import sys
 import time
+import traceback
 import numpy as np
 import matplotlib
 matplotlib.use('QtAgg')
@@ -8,12 +9,15 @@ from matplotlib.figure import Figure
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QStackedWidget, QFrame, QGridLayout,
-    QSizePolicy, QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView
+    QSizePolicy, QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView, QComboBox
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QImage, QPixmap
 from tremor_engine import TremorEngine
-from capture_worker import CaptureWorker
+from capture_worker import ProcessCaptureWorker as CaptureWorker
+from protocol_panel import ProtocolPanel, FacialProtocolPanel
+from face_capture import FaceCaptureWorker
+from facial_engine import analyze_stage, compare_stages, PAIRS
 
 
 BG = "#FFFFFF"
@@ -395,7 +399,7 @@ class DashboardPage(QWidget):
             ("Version", "0.1.0-alpha"),
             ("Backend", "MediaPipe + SciPy DSP"),
             ("Input", "USB Webcam + Microphone"),
-            ("Modules", "1 prototype / 4 planned"),
+            ("Modules", "2 prototypes / 3 planned"),
             ("Framework", "PyQt6 / OpenCV"),
         ]):
             kl = QLabel(k)
@@ -424,7 +428,7 @@ class DashboardPage(QWidget):
         """)
         for r, (name, typ, st) in enumerate([
             ("Hand Motion", "Research", "PROTOTYPE"),
-            ("Facial Asymmetry", "Research", "PLANNED"),
+            ("Facial Asymmetry", "Research", "PROTOTYPE"),
             ("rPPG Vitals", "Monitoring", "PLANNED"),
             ("Eye-Tracking AAC", "Assistive", "PLANNED"),
             ("Voice Biomarkers", "Research", "PLANNED"),
@@ -455,7 +459,7 @@ class DashboardPage(QWidget):
         diag_panel, diag_lay = panel("Research Modules")
         for name, desc in [
             ("TREMOR", "Webcam hand-motion measurements: frequency, RMS displacement and spectrum"),
-            ("FACIAL", "Planned: bilateral facial landmark measurements"),
+            ("FACIAL", "Rest / smile / brow-raise bilateral geometry and movement measurements"),
             ("VOICE", "Planned: acoustic features from sustained phonation"),
         ]:
             row = QHBoxLayout()
@@ -494,6 +498,35 @@ class DashboardPage(QWidget):
         layout.addStretch()
 
 
+class VideoLabel(QLabel):
+    def __init__(self, text):
+        super().__init__(text)
+        self.source_frame = None
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+
+    def setPixmap(self, pixmap):
+        self.source_frame = pixmap
+        self._scale_frame()
+
+    def _scale_frame(self):
+        if self.source_frame is not None:
+            super().setPixmap(self.source_frame.scaled(
+                self.contentsRect().size(), Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.FastTransformation))
+
+    def clear(self):
+        self.source_frame = None
+        super().clear()
+
+    def setText(self, text):
+        self.source_frame = None
+        super().setText(text)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._scale_frame()
+
+
 class TremorPage(QWidget):
     capture_finished = pyqtSignal()
 
@@ -511,6 +544,7 @@ class TremorPage(QWidget):
         self._analyze_on_finish = False
         self._failure = ""
         self._closing = False
+        self._deadline_requested = False
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._on_frame)
 
@@ -542,13 +576,21 @@ class TremorPage(QWidget):
         left = QVBoxLayout()
         left.setSpacing(8)
 
-        self.video_label = QLabel("HAND TRACKING FEED\n\n640x480 @ 30fps")
-        self.video_label.setMinimumSize(480, 360)
-        self.video_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.capture_area = QWidget()
+        self.capture_area.setMinimumSize(0, 0)
+        self.capture_layout = QVBoxLayout(self.capture_area)
+        self.capture_layout.setContentsMargins(0, 0, 0, 0)
+        self.capture_layout.setSpacing(0)
+        self.video_label = VideoLabel("HAND TRACKING FEED\n\n640x480 @ 30fps")
+        self.video_label.setMinimumSize(480, 0)
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_label.setFont(f_mono(10))
         self.video_label.setStyleSheet(f"background: {NAVY}; border: 1px solid {BORDER}; color: #475569;")
-        left.addWidget(self.video_label)
+        self.capture_layout.addWidget(self.video_label, 1)
+        self.protocol_panel = ProtocolPanel()
+        self.protocol_panel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.capture_layout.addWidget(self.protocol_panel, 1)
+        left.addWidget(self.capture_area, 1)
 
         controls = QHBoxLayout()
         controls.setSpacing(6)
@@ -641,6 +683,7 @@ class TremorPage(QWidget):
             set_badge(self.analysis_badge, "WAITING" if analyze else "CANCELLED", TEXT_MUTED)
 
     def _reset(self):
+        self.protocol_panel.clear()
         if self.worker is not None:
             self._stop(analyze=False)
         else:
@@ -651,6 +694,7 @@ class TremorPage(QWidget):
         self.frame_count = 0
         self._analyze_on_finish = False
         self._failure = ""
+        self._deadline_requested = False
         self.engine.reset()
         self.progress.setValue(0)
         self.info_label.setText("Samples: 0  |  FPS: --  |  0.0s / 15.0s")
@@ -690,6 +734,7 @@ class TremorPage(QWidget):
     def _on_failure(self, message):
         if not self._analyze_on_finish or self._closing:
             return
+        self.protocol_panel.clear()
         self._failure = message
         self._stop(analyze=False)
         self.engine.reset()
@@ -750,6 +795,7 @@ class TremorPage(QWidget):
                 return
             if self.record_start is not None and now - self.record_start >= self.record_duration:
                 self.recording = False
+                self._deadline_requested = True
                 self.btn_stop.setEnabled(False)
                 self.worker.requestInterruption()
                 set_badge(self.page_badge, "STOPPING", AMBER)
@@ -758,17 +804,32 @@ class TremorPage(QWidget):
             h, w = display.shape[:2]
             qimg = QImage(display.data, w, h, display.strides[0], QImage.Format.Format_RGB888)
             pixmap = QPixmap.fromImage(qimg)
-            self.video_label.setPixmap(pixmap.scaled(
-                self.video_label.size(), Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.FastTransformation))
+            self.video_label.setPixmap(pixmap)
 
     def _on_finished(self):
         worker = self.worker
         if worker is None:
             return
+        try:
+            self._finish_capture(worker)
+        except Exception as exc:
+            self._analysis_failed(exc)
+        finally:
+            self.timer.stop()
+            self.recording = False
+            self.worker = None
+            self.btn_start.setEnabled(not self._closing)
+            self.btn_stop.setEnabled(False)
+            worker.deleteLater()
+            if self.status_bar:
+                self.status_bar.update_badge("CAM", "DISCONNECTED", TEXT_MUTED)
+                self.status_bar.update_badge("MEDIAPIPE", "NOT LOADED", TEXT_MUTED)
+            self.capture_finished.emit()
+
+    def _finish_capture(self, worker):
         if worker.error:
             self._on_failure(worker.error)
-        elif worker.reason == "stopped" and self._stop_time is None and not self._closing:
+        elif worker.reason == "stopped" and self._stop_time is None and not self._closing and not self._deadline_requested:
             self._analyze_on_finish = False
             self._failure = "Capture ended before the recording was complete"
             set_badge(self.page_badge, "CAPTURE STOPPED", AMBER)
@@ -777,13 +838,6 @@ class TremorPage(QWidget):
         self._on_frame()
         self.timer.stop()
         self.recording = False
-        self.worker = None
-        worker.deleteLater()
-        self.btn_start.setEnabled(not self._closing)
-        self.btn_stop.setEnabled(False)
-        if self.status_bar:
-            self.status_bar.update_badge("CAM", "DISCONNECTED", TEXT_MUTED)
-            self.status_bar.update_badge("MEDIAPIPE", "NOT LOADED", TEXT_MUTED)
         if self._analyze_on_finish and not self._closing:
             self.record_end = self._stop_time if self._stop_time is not None else self.record_end
             self.video_label.clear()
@@ -795,7 +849,6 @@ class TremorPage(QWidget):
                 set_badge(self.page_badge, "IDLE", TEXT_MUTED)
                 set_badge(self.analysis_badge, "WAITING", TEXT_MUTED)
                 self.info_label.setText("Capture cancelled before the first frame")
-        self.capture_finished.emit()
 
     def _update_live_wave(self):
         t = np.array(self.engine.timestamps)
@@ -813,6 +866,28 @@ class TremorPage(QWidget):
         self.wave_canvas.draw_idle()
 
     def _run_analysis(self):
+        try:
+            self._analyze_and_render()
+        except Exception as exc:
+            self._analysis_failed(exc)
+
+    def _analysis_failed(self, exc):
+        self.protocol_panel.clear()
+        traceback.print_exc()
+        set_badge(self.page_badge, "ANALYSIS ERROR", RED)
+        set_badge(self.analysis_badge, "FAILED", RED)
+        self.analysis_detail.setText(f"Analysis failed: {type(exc).__name__}: {exc}. Capture can be retried.")
+        self.video_label.setText("ANALYSIS FAILED")
+        self.m_freq.set_value("---")
+        self.m_amp.set_value("---")
+        self.m_conf.set_value("---")
+        self.m_class.set_value("ANALYSIS FAILED", RED)
+        self.psd_canvas.clear_plot()
+        if self.status_bar:
+            self.status_bar.update_badge("DSP", "ERROR", RED)
+
+    def _analyze_and_render(self):
+        self.protocol_panel.clear()
         set_badge(self.analysis_badge, "PROCESSING", AMBER)
         results = self.engine.analyze(record_start=self.record_start, record_end=self.record_end)
 
@@ -870,6 +945,8 @@ class TremorPage(QWidget):
 
         self._plot_psd(results)
         self._plot_waveform(results)
+        self.protocol_panel.set_results(results)
+        self.protocol_panel.show()
 
     def _plot_psd(self, r):
         ax = self.psd_canvas.ax
@@ -925,56 +1002,329 @@ class TremorPage(QWidget):
 
 
 class FacialPage(QWidget):
-    def __init__(self):
+    capture_finished = pyqtSignal()
+
+    def __init__(self, status_bar=None):
         super().__init__()
+        self.status_bar = status_bar
+        self.worker = None
+        self.samples = []
+        self.stage_bounds = {}
+        self.stage_counts = {}
+        self.stage_rejected = {}
+        self.cancelled = False
+        self.closing = False
+        self.results = None
+        self.preview_seen = False
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._poll)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(8)
         header = QHBoxLayout()
-        title = QLabel("FACIAL ASYMMETRY / PLANNED")
+        title = QLabel("FACIAL SYMMETRY / FACE COMPONENT OF FAST")
         title.setFont(f_sans(13, True))
         title.setStyleSheet(f"color: {TEXT};")
         header.addWidget(title)
         header.addStretch()
-        header.addWidget(make_status_badge("PLANNED", TEXT_MUTED))
+        self.badge = make_status_badge("IDLE", TEXT_MUTED)
+        header.addWidget(self.badge)
         layout.addLayout(header)
-        sub = QLabel("Interface preview only  |  No face tracking or assessment is implemented")
-        sub.setFont(f_mono(8))
-        sub.setStyleSheet(f"color: {TEXT_MUTED};")
+        sub = QLabel("Sudden facial droop, arm weakness or speech difficulty: seek emergency help immediately. Do not wait for this test.")
+        sub.setFont(f_mono(9, True))
+        sub.setStyleSheet(f"color: {RED};")
+        sub.setWordWrap(True)
         layout.addWidget(sub)
         body = QHBoxLayout()
         body.setSpacing(8)
         left = QVBoxLayout()
         left.setSpacing(8)
-        left.addWidget(feed_panel("FACE MESH OVERLAY"))
+        self.guidance = QLabel('One face, frontal pose, consistent distance. Follow the expression instructions here.')
+        self.guidance.setWordWrap(True)
+        self.guidance.setFont(f_mono(10, True))
+        self.guidance.setTextFormat(Qt.TextFormat.PlainText)
+        self.guidance.setStyleSheet(f'color: {NAVY}; background: {BG_ALT}; border: 1px solid {BORDER}; padding: 6px;')
+        left.addWidget(self.guidance)
+        self.video = VideoLabel('FACE MESH / REST -> SMILE -> RAISE EYEBROWS')
+        self.video.setMinimumSize(480, 0)
+        self.video.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.video.setStyleSheet(f'background: {NAVY}; color: #94A3B8; border: 1px solid {BORDER};')
+        self.capture_area = QWidget()
+        self.capture_area.setMinimumSize(0, 0)
+        self.capture_layout = QVBoxLayout(self.capture_area)
+        self.capture_layout.setContentsMargins(0, 0, 0, 0)
+        self.capture_layout.setSpacing(0)
+        self.capture_layout.addWidget(self.video, 1)
+        self.protocol_panel = FacialProtocolPanel()
+        self.protocol_panel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.capture_layout.addWidget(self.protocol_panel, 1)
+        left.addWidget(self.capture_area, 1)
         controls = QHBoxLayout()
         controls.setSpacing(6)
-        controls.addWidget(planned_button("CAPTURE RESTING"))
-        controls.addWidget(planned_button("CAPTURE SMILE", primary=False))
-        controls.addWidget(planned_button("RESET", primary=False))
+        self.start = cmd_button('START FACIAL TEST')
+        self.stop = cmd_button('STOP', primary=False)
+        self.reset = cmd_button('RESET', primary=False)
+        self.start.clicked.connect(self._start)
+        self.stop.clicked.connect(self._stop)
+        self.reset.clicked.connect(self._reset)
+        self.stop.setEnabled(False)
+        controls.addWidget(self.start)
+        controls.addWidget(self.stop)
+        controls.addWidget(self.reset)
         left.addLayout(controls)
+        self.progress = thin_progress()
+        left.addWidget(self.progress)
         body.addLayout(left, 3)
         right = QVBoxLayout()
         right.setSpacing(8)
         idx_panel, idx_lay = panel("Asymmetry Index")
-        idx_lay.addWidget(metric_readout_large("Overall Asymmetry", "---", "%", NAVY))
-        verdict = QLabel("Awaiting capture")
-        verdict.setFont(f_mono(9))
-        verdict.setStyleSheet(f"color: {TEXT_MUTED}; border: none;")
-        idx_lay.addWidget(verdict)
+        self.index = MetricDisplay('Normalized geometric error', '---', '%')
+        idx_lay.addWidget(self.index)
+        self.verdict = QLabel('Percentage of eye-corner span; not a probability of paresis or stroke.')
+        self.verdict.setWordWrap(True)
+        self.verdict.setTextFormat(Qt.TextFormat.PlainText)
+        self.verdict.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.verdict.setFont(f_mono(8))
+        self.verdict.setStyleSheet(f"color: {TEXT_DIM}; border: none;")
+        idx_lay.addWidget(self.verdict)
         right.addWidget(idx_panel)
-        det_panel, det_lay = panel("Bilateral Distances")
+        det_panel, det_lay = panel("Bilateral Measurements")
         det_grid = QGridLayout()
         det_grid.setSpacing(2)
-        det_grid.addWidget(metric_readout("Mouth dL / dR", "--- / ---", "px"), 0, 0)
-        det_grid.addWidget(metric_readout("Eye Aperture L/R", "--- / ---", "px"), 0, 1)
-        det_grid.addWidget(metric_readout("Brow Elevation L/R", "--- / ---", "px"), 1, 0)
-        det_grid.addWidget(metric_readout("Nasolabial L/R", "--- / ---", "px"), 1, 1)
+        self.mouth = MetricDisplay('Smile excursion imbalance', '---', '%')
+        self.brow = MetricDisplay('Brow excursion imbalance', '---', '%')
+        self.eye = MetricDisplay('Rest eye aperture R / L', '---')
+        self.cheek = MetricDisplay('Cheek geometry error', '---', '%')
+        det_grid.addWidget(self.mouth, 0, 0)
+        det_grid.addWidget(self.eye, 0, 1)
+        det_grid.addWidget(self.brow, 1, 0)
+        det_grid.addWidget(self.cheek, 1, 1)
         det_lay.addLayout(det_grid)
+        self.distances = QLabel('Axis distances R / L: awaiting capture')
+        self.distances.setWordWrap(True)
+        self.distances.setFont(f_mono(8))
+        self.distances.setStyleSheet(f'color: {TEXT_DIM}; border: none;')
+        det_lay.addWidget(self.distances)
         right.addWidget(det_panel)
-        right.addWidget(graph_area("DEVIATION HEATMAP"))
+        self.map = PlotCanvas()
+        map_header = QHBoxLayout()
+        map_header.addWidget(QLabel('DEVIATION MAP / EXPRESSION'))
+        self.expression = QComboBox()
+        self.expression.addItems(['Rest', 'Smile', 'Brows'])
+        self.expression.currentIndexChanged.connect(self._expression_changed)
+        self.expression.setEnabled(False)
+        map_header.addWidget(self.expression)
+        right.addLayout(map_header)
+        right.addWidget(self.map, 1)
+        disclaimer = QLabel('Research prototype only. Face observations are not the full FAST test and cannot diagnose or rule out stroke. Cheek landmarks do not measure nasolabial fold depth.')
+        disclaimer.setWordWrap(True)
+        disclaimer.setFont(f_mono(8))
+        right.addWidget(disclaimer)
         body.addLayout(right, 2)
         layout.addLayout(body)
+
+    def _start(self):
+        if self.worker is not None or self.closing:
+            return
+        self._reset()
+        self.worker = FaceCaptureWorker(self)
+        self.worker.finished.connect(self._finished)
+        self.worker.failed.connect(self._capture_failed)
+        self.worker.status.connect(self._capture_status)
+        self.start.setEnabled(False)
+        self.stop.setEnabled(True)
+        set_badge(self.badge, 'STARTING', AMBER)
+        self.guidance.setText('Starting camera and face model. First run may download the model.')
+        if self.status_bar:
+            self.status_bar.update_badge('MEDIAPIPE', 'STARTING', AMBER)
+        self.timer.start(40)
+        self.worker.start()
+
+    def _stop(self):
+        self.cancelled = True
+        if self.worker is not None:
+            self.worker.requestInterruption()
+            self.stop.setEnabled(False)
+            set_badge(self.badge, 'STOPPING', AMBER)
+
+    def _reset(self):
+        self._stop()
+        self.protocol_panel.clear()
+        self.samples = []
+        self.stage_bounds = {}
+        self.stage_counts = {}
+        self.stage_rejected = {}
+        self.results = None
+        self.preview_seen = False
+        self.expression.setEnabled(False)
+        self.progress.setValue(0)
+        for metric in (self.index, self.mouth, self.brow, self.eye, self.cheek):
+            metric.set_value('---')
+        self.map.clear_plot()
+        self.video.setText('FACE MESH / REST -> SMILE -> RAISE EYEBROWS')
+        self.distances.setText('Axis distances R / L: awaiting capture')
+        self.guidance.setText('Face the camera directly and use a clear smile and brow raise.')
+        self.verdict.setText('Percentage of eye-corner span; not a probability of paresis or stroke.')
+        self.verdict.setStyleSheet(f'color: {TEXT_DIM}; border: none;')
+        self.start.setEnabled(self.worker is None and not self.closing)
+        self.stop.setEnabled(False)
+        set_badge(self.badge, 'IDLE', TEXT_MUTED)
+        if self.worker is None:
+            self.cancelled = False
+
+    def _poll(self):
+        try:
+            self._drain_frames()
+        except Exception as exc:
+            self._capture_failed(f'Face preview failed: {exc}')
+            self.cancelled = True
+            if self.worker is not None:
+                self.worker.requestInterruption()
+
+    def _capture_status(self, status):
+        if not self.cancelled and self.worker is not None and not self.preview_seen:
+            self.guidance.setText('Face capture setup: ' + status)
+
+    def _capture_failed(self, message):
+        if not self.cancelled:
+            self.protocol_panel.clear()
+            self.guidance.setText(message)
+            self.verdict.setText('CAPTURE ERROR: ' + message)
+            self.verdict.setStyleSheet(f'color: {RED}; border: none;')
+            set_badge(self.badge, 'CAPTURE ERROR', RED)
+
+    def _drain_frames(self):
+        if self.worker is None:
+            return
+        latest, samples = self.worker.take_pending()
+        if self.cancelled:
+            return
+        self.samples.extend(samples)
+        if latest is not None:
+            self.preview_seen = True
+            self.stage_bounds = latest['stage_bounds']
+            self.stage_counts = latest['counts']
+            self.stage_rejected = latest['rejected']
+            self.guidance.setText(latest['message'])
+            self.progress.setValue(int(latest['progress'] * 100))
+            set_badge(self.badge, latest['stage'].upper(), GREEN)
+            image = latest['image']
+            h, w = image.shape[:2]
+            self.video.setPixmap(QPixmap.fromImage(QImage(image.data, w, h, image.strides[0], QImage.Format.Format_RGB888)))
+            if self.status_bar:
+                self.status_bar.update_badge('CAM', 'ACTIVE', GREEN)
+                self.status_bar.update_badge('MEDIAPIPE', 'FACE LOADED', GREEN)
+
+    def _finished(self):
+        worker = self.worker
+        if worker is None:
+            return
+        try:
+            self._drain_frames()
+            if not self.cancelled:
+                if worker.error:
+                    raise ValueError(worker.error)
+                if worker.reason != 'deadline':
+                    raise ValueError('Face capture did not complete.')
+                stages = {}
+                for stage in ('rest', 'smile', 'brows'):
+                    selected = [sample for sample in self.samples if sample['stage'] == stage]
+                    if stage not in self.stage_bounds:
+                        raise ValueError('Missing expression: ' + stage)
+                    count = self.stage_counts.get(stage, 0)
+                    if count == 0 or self.stage_rejected.get(stage, 0) / count > 0.2:
+                        rejected = self.stage_rejected.get(stage, 0)
+                        raise ValueError(f'{stage.upper()}: {len(selected)} accepted / {count} frames, {rejected} rejected. Repeat with stable lighting and frontal pose.')
+                    try:
+                        stages[stage] = analyze_stage(selected, *self.stage_bounds[stage])
+                    except ValueError as exc:
+                        raise ValueError(stage.upper() + ': ' + str(exc)) from exc
+                result = compare_stages(stages['rest'], stages['smile'], stages['brows'])
+                self.results = result
+                self.index.set_value(f"{result['asymmetry_index']:.2f}")
+                self.mouth.set_value(f"{result['smile_imbalance']:.1f}")
+                self.brow.set_value(f"{result['brow_imbalance']:.1f}")
+                self.eye.set_value(f"{stages['rest']['eye'][0]:.2f} / {stages['rest']['eye'][1]:.2f}")
+                self.cheek.set_value(f"{stages['rest']['regions']['cheeks']:.2f}")
+                self.expression.setEnabled(True)
+                self.expression.setCurrentIndex(1)
+                self._expression_changed()
+                self.progress.setValue(100)
+                set_badge(self.badge, 'COMPLETE', GREEN)
+                self.guidance.setText(
+                    'Complete. Valid frames: ' + ' / '.join(f"{name}: {stages[name]['samples']}" for name in stages)
+                    + '. Geometric percentages are not clinical risk scores.'
+                )
+                self.verdict.setText('Measurements complete. Percentage of eye-corner span; not a probability of paresis or stroke.')
+                self.video.setText('RECORDING COMPLETE / SEE RESULTS')
+                self.protocol_panel.set_results(result)
+                self.protocol_panel.show()
+            else:
+                set_badge(self.badge, 'IDLE', TEXT_MUTED)
+                self.video.setText('CAPTURE CANCELLED')
+        except Exception as exc:
+            self.protocol_panel.clear()
+            self.results = None
+            self.expression.setEnabled(False)
+            self.map.clear_plot()
+            self.distances.setText('No valid facial measurements available. Repeat capture.')
+            for metric in (self.index, self.mouth, self.brow, self.eye, self.cheek):
+                metric.set_value('---')
+            set_badge(self.badge, 'RETRY', AMBER)
+            self.guidance.setText(str(exc))
+            self.verdict.setText('MEASUREMENT NOT AVAILABLE: ' + str(exc))
+            self.verdict.setStyleSheet(f'color: {AMBER}; border: none;')
+            self.video.setText('RECORDING ENDED / RETRY REQUIRED')
+            self.map.ax.text(0.5, 0.5, 'No valid result: see reason above', ha='center', va='center',
+                             transform=self.map.ax.transAxes, fontsize=9, color=TEXT_DIM)
+            self.map.draw_idle()
+            print(f'FACIAL measurement rejected: {exc}', file=sys.stderr)
+        finally:
+            self.timer.stop()
+            self.worker = None
+            worker.deleteLater()
+            self.start.setEnabled(not self.closing)
+            self.stop.setEnabled(False)
+            if self.status_bar:
+                self.status_bar.update_badge('CAM', 'DISCONNECTED', TEXT_MUTED)
+                self.status_bar.update_badge('MEDIAPIPE', 'NOT LOADED', TEXT_MUTED)
+            self.capture_finished.emit()
+
+    def _plot_face(self, result):
+        ax = self.map.ax
+        ax.clear()
+        points = result['points']
+        ax.scatter(points[:468, 0], -points[:468, 1], s=2, color='#CBD5E1')
+        selected = [i for pairs in PAIRS.values() for pair in pairs for i in pair]
+        errors = [result['regions'][name] for name, pairs in PAIRS.items() for pair in pairs for _ in pair]
+        ax.scatter(points[selected, 0], -points[selected, 1], c=errors, vmin=0, vmax=10, cmap='YlOrRd', s=22)
+        slope, offset = result['axis']
+        yy = np.array([points[:, 1].min(), points[:, 1].max()])
+        ax.plot(slope * yy + offset, -yy, color=NAVY, linewidth=0.5)
+        ax.set_aspect('equal')
+        ax.set_title(self.expression.currentText().upper() + ' / ERROR: YELLOW 0% -> RED 10%+', fontsize=8)
+        ax.set_xlabel('Normalized horizontal position; anatomical R at left', fontsize=7)
+        self.map.draw_idle()
+
+    def _expression_changed(self, index=None):
+        if self.results is None:
+            return
+        key = ('rest', 'smile', 'brows')[self.expression.currentIndex()]
+        self._plot_face(self.results[key])
+        result = self.results[key]
+        self.distances.setText(
+            f"{key.upper()} axis distances (% eye span), anatomical R / L:\n"
+            f"Mouth: {result['mouth'][0]*100:.2f} / {result['mouth'][1]*100:.2f}; "
+            f"cheek: {result['cheek'][0]*100:.2f} / {result['cheek'][1]*100:.2f}; "
+            f"brow elevation: {result['brow'][0]*100:.2f} / {result['brow'][1]*100:.2f}"
+        )
+
+    def cleanup(self):
+        self.closing = True
+        self._stop()
+        self.start.setEnabled(False)
+        self.reset.setEnabled(False)
+        return self.worker is None
 
 
 class RPPGPage(QWidget):
@@ -1170,7 +1520,7 @@ class VoicePage(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("TecnoMedNeuro - Hand Motion Research Prototype")
+        self.setWindowTitle("TecnoMedNeuro - Motion and Facial Research Prototype")
         self.setMinimumSize(1200, 750)
         self.resize(1400, 860)
         self.setStyleSheet(f"QMainWindow {{ background: {BG}; }} * {{ border-radius: 0px; }}")
@@ -1193,7 +1543,9 @@ class MainWindow(QMainWindow):
         self.tremor_page.capture_finished.connect(self._finish_close)
         self.stack.addWidget(DashboardPage())
         self.stack.addWidget(self.tremor_page)
-        self.stack.addWidget(FacialPage())
+        self.facial_page = FacialPage(status_bar=self.status_bar)
+        self.facial_page.capture_finished.connect(self._finish_close)
+        self.stack.addWidget(self.facial_page)
         self.stack.addWidget(RPPGPage())
         self.stack.addWidget(AACPage())
         self.stack.addWidget(VoicePage())
@@ -1203,11 +1555,18 @@ class MainWindow(QMainWindow):
         self.switch_page(0)
 
     def switch_page(self, index):
+        if hasattr(self, 'facial_page'):
+            if self.tremor_page.worker is not None and index == 2:
+                return
+            if self.facial_page.worker is not None and index == 1:
+                return
         self.stack.setCurrentIndex(index)
         self.nav.set_active(index)
 
     def closeEvent(self, event):
-        if self.tremor_page.cleanup():
+        tremor_done = self.tremor_page.cleanup()
+        face_done = self.facial_page.cleanup()
+        if tremor_done and face_done:
             event.accept()
         else:
             self._close_pending = True
@@ -1219,6 +1578,8 @@ class MainWindow(QMainWindow):
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     window = MainWindow()

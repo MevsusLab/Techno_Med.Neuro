@@ -46,25 +46,27 @@ class TremorEngine:
         if np.any(intervals <= 0):
             self.last_error = "Frame timestamps are not strictly increasing."
             return None
+        if (record_start is None) != (record_end is None):
+            self.last_error = "Both recording time bounds are required."
+            return None
+        if record_start is not None and (
+            not np.isfinite(record_start) or not np.isfinite(record_end) or record_end <= record_start
+        ):
+            self.last_error = "Invalid recording time bounds."
+            return None
+
         fs = 1.0 / np.median(intervals)
-        capture_duration = record_end - record_start if record_start is not None and record_end is not None else self.duration
-        coverage = min(1.0, self.count / (capture_duration * fs)) if capture_duration > 0 else 0.0
+        capture_duration = record_end - record_start if record_start is not None else self.duration
+        coverage = min(1.0, self.count / (capture_duration * fs))
         max_gap = float(np.max(intervals))
-        jitter = float(np.percentile(np.abs(intervals * fs - 1), 90))
         self.last_quality.update({
             "fs": float(fs), "coverage": float(coverage), "max_gap_sec": max_gap,
-            "timing_jitter": jitter,
+            "timing_jitter": float(np.percentile(np.abs(intervals * fs - 1), 90)),
         })
-        if self.count < 200 or self.duration < 10:
+        if self.count < 200 or self.duration < 10 or capture_duration < 10:
             self.last_error = f"Only {self.duration:.1f}s / {self.count} hand samples. Record at least 10 seconds."
             return None
-        if record_start is not None and record_end is not None:
-            if not np.isfinite(record_start) or not np.isfinite(record_end) or record_end <= record_start:
-                self.last_error = "Invalid recording time bounds."
-                return None
-            if record_end - record_start < 10:
-                self.last_error = "Record at least 10 seconds with a visible hand."
-                return None
+        if record_start is not None:
             if t[0] < record_start - 0.02 or t[-1] > record_end + 0.02:
                 self.last_error = "Landmarks fall outside the recording interval."
                 return None
@@ -75,7 +77,6 @@ class TremorEngine:
                     "Keep the hand visible until recording finishes."
                 )
                 return None
-
         if fs < 25:
             self.last_error = (
                 f"Tracking rate is {fs:.1f} samples/s; at least 25 are required. "
@@ -108,7 +109,6 @@ class TremorEngine:
         stable = (time >= 1.0) & (time <= self.duration - 1.0)
         stable_x = filtered_x[stable]
         stable_y = filtered_y[stable]
-
         nperseg = min(256, len(stable_x))
         freqs, px = welch(stable_x, fs=fs, nperseg=nperseg, window="hamming")
         _, py = welch(stable_y, fs=fs, nperseg=nperseg, window="hamming")
@@ -126,9 +126,9 @@ class TremorEngine:
         above_band = unfiltered_peak >= high - resolution
         total_power = np.sum(band_psd)
         concentration = 100 * np.sum(band_psd[np.abs(band_freqs - peak) <= 1]) / total_power if total_power > 0 else 0.0
-        peak_ratio = band_psd[peak_index] / np.median(band_psd) if np.median(band_psd) > 0 else 0.0
+        noise_floor = np.median(band_psd)
+        peak_ratio = band_psd[peak_index] / noise_floor if noise_floor > 0 else 0.0
         rms = np.sqrt(np.mean(stable_x ** 2 + stable_y ** 2))
-
         window = np.hamming(len(stable_x))
         fft_freqs = rfftfreq(len(stable_x), 1 / fs)
         fft_mag = np.sqrt(np.abs(rfft(stable_x * window)) ** 2 + np.abs(rfft(stable_y * window)) ** 2) * 2 / np.sum(window)
@@ -139,22 +139,12 @@ class TremorEngine:
         return {
             "dominant_freq": float(peak) if rms > 1e-8 and peak_ratio >= 4 and concentration >= 30 and peak < high - resolution and not above_band else None,
             "above_band": bool(above_band),
-            "rms_px": float(rms),
-            "concentration": float(concentration),
-            "fs": float(fs),
-            "max_freq": float(high),
-            "samples": self.count,
-            "duration_sec": self.duration,
-            "resolution_hz": resolution,
-            "coverage": float(coverage),
-            "max_gap_sec": float(np.max(intervals)),
-            "time": time,
-            "raw_x": raw_x,
-            "raw_y": raw_y,
-            "filtered_y": filtered_y,
-            "filtered_x": filtered_x,
-            "fft_freqs": fft_freqs,
-            "fft_mag": fft_mag,
-            "psd_freqs": freqs,
-            "psd": psd,
+            "rms_px": float(rms), "concentration": float(concentration),
+            "fs": float(fs), "max_freq": float(high), "samples": self.count,
+            "duration_sec": self.duration, "resolution_hz": resolution,
+            "coverage": float(coverage), "max_gap_sec": max_gap,
+            "time": time, "raw_x": raw_x, "raw_y": raw_y,
+            "filtered_y": filtered_y, "filtered_x": filtered_x,
+            "fft_freqs": fft_freqs, "fft_mag": fft_mag,
+            "psd_freqs": freqs, "psd": psd,
         }
