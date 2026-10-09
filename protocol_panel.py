@@ -5,6 +5,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QTextDocument
 from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtWidgets import QFileDialog, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from i18n_ru import RussianLabel as QLabel, ru
 
 
 def protocol_text(results):
@@ -66,8 +67,8 @@ class ProtocolPanel(QFrame):
         title.setWordWrap(True)
         title.setStyleSheet('color: #60A5FA;')
         header.addWidget(title, 1)
-        self.export_button = QPushButton('[EXPORT PDF]')
-        self.save_button = QPushButton('[SAVE REPORT]')
+        self.export_button = QPushButton(ru('[EXPORT PDF]'))
+        self.save_button = QPushButton(ru('[SAVE REPORT]'))
         for button in (self.export_button, self.save_button):
             button.setFont(QFont('Consolas', 8))
             header.addWidget(button)
@@ -130,8 +131,8 @@ class ProtocolPanel(QFrame):
         if not self.report or self.isHidden():
             return
         extension = 'pdf' if pdf else 'txt'
-        path, _ = QFileDialog.getSaveFileName(self, 'Export research report', f'{self.report_name}.{extension}',
-                                             'PDF (*.pdf)' if pdf else 'Text report (*.txt)')
+        path, _ = QFileDialog.getSaveFileName(self, 'Сохранить исследовательский отчёт', f'{self.report_name}.{extension}',
+                                             'PDF (*.pdf)' if pdf else 'Текстовый отчёт (*.txt)')
         if not path:
             return
         output = Path(path)
@@ -144,14 +145,14 @@ class ProtocolPanel(QFrame):
                 printer.setOutputFileName(str(output))
                 document = QTextDocument()
                 document.setDefaultFont(QFont('Consolas', 9))
-                document.setPlainText(self.report)
+                document.setPlainText(ru(self.report))
                 document.print(printer)
                 if not output.is_file() or output.stat().st_size == 0:
                     raise OSError('PDF output was not created')
             else:
-                output.write_text(self.report, encoding='utf-8')
+                output.write_text(ru(self.report), encoding='utf-8')
         except (OSError, RuntimeError) as exc:
-            QMessageBox.warning(self, 'Report export failed', str(exc))
+            QMessageBox.warning(self, ru('Не удалось сохранить отчёт'), ru(str(exc)))
 
 
 def facial_protocol_text(results):
@@ -212,4 +213,157 @@ class FacialProtocolPanel(ProtocolPanel):
             f"Recorded: {datetime.now().astimezone().isoformat(timespec='seconds')}",
             status, detail, 'PROTOCOL: ' + action, limitation,
             '\n'.join(quality), self.disclaimer.text(),
+        ])
+
+
+def rppg_protocol_text(results):
+    bpm = results['bpm']
+    concentration = results['concentration']
+    coverage = results['coverage'] * 100
+    roi_spread = max(results['roi_bpm']) - min(results['roi_bpm'])
+    if coverage < 70 or concentration < 60 or roi_spread > 5:
+        status = '[UNRELIABLE] OPTICAL QUALITY / INTERPRETATION WITHHELD'
+        detail = (
+            'The candidate estimate does not meet the protocol panel\'s stricter optical-quality thresholds. '
+            'This is not a clinical heart-rate assessment. Region discrepancy alone does not establish its cause.'
+        )
+        action = (
+            'Support your head comfortably, use constant diffuse frontal lighting, and avoid speaking or moving. '
+            'Repeat the 30-second measurement if useful and confirm with a direct pulse measurement. '
+            'Do not use this candidate for clinical decisions.'
+        )
+    elif bpm < 60:
+        status = f'[CHECK] LOWER PULSE-RATE ESTIMATE ({bpm:.0f} BPM)'
+        detail = (
+            'The estimated rate is below 60 BPM. This webcam result cannot diagnose bradycardia, '
+            'a conduction disorder, or normal athletic adaptation.'
+        )
+        action = (
+            'Confirm using a direct pulse measurement. Discuss persistent low readings or dizziness, '
+            'fainting, or unusual fatigue with a qualified clinician. Review medication questions with '
+            'a clinician; do not change medication based on this result.'
+        )
+    elif bpm <= 95:
+        status = f'[OBSERVATION] PULSE ESTIMATE IN 60-95 BPM BAND ({bpm:.0f} BPM)'
+        detail = (
+            'The candidate falls within the selected observation band and passes the panel\'s quality checks. '
+            'It does not establish normal circulation, autonomic balance, or absence of a medical condition.'
+        )
+        action = 'Compare with a direct pulse measurement under similar resting conditions. Record context and discuss persistent symptoms with a qualified clinician.'
+    else:
+        status = f'[CHECK] ELEVATED PULSE-RATE ESTIMATE ({bpm:.0f} BPM)'
+        detail = (
+            'The estimated rate exceeds the panel\'s 95 BPM boundary. This boundary is an exploratory '
+            'display rule, not a tachycardia diagnosis or explanation of the cause.'
+        )
+        action = (
+            'If comfortable and symptom-free, rest quietly for 5-10 minutes and confirm with a direct pulse measurement. '
+            'Use steady light for any webcam retest. Note recent exercise, stimulants, sleep and illness as context. '
+            'Discuss persistent unexplained readings with a qualified clinician.'
+        )
+    action += ' Seek urgent medical help for chest pain, fainting, severe breathlessness, or other acute concerning symptoms; do not wait for another scan.'
+    limitation = (
+        f'Spectral concentration: {concentration:.1f}%; valid coverage: {coverage:.1f}%; '
+        f'all-ROI spread: {roi_spread:.1f} BPM. '
+        'Panel thresholds (<70% coverage, <60% concentration, >5 BPM spread) are unvalidated display rules. '
+        'All-ROI spread includes regions excluded by the engine; engine acceptance and protocol interpretation are separate.'
+    )
+    if results['warnings']:
+        limitation += '\nCAPTURE CAUTIONS: ' + ' '.join(results['warnings'])
+    return status, detail, action, limitation
+
+
+class RPPGProtocolPanel(ProtocolPanel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.report_name = 'rppg_pulse_report'
+        self.title_label.setText('CLINICAL PROTOCOL & VITALS SCREENING')
+        self.header_layout.removeWidget(self.save_button)
+        self.header_layout.insertWidget(1, self.save_button)
+        self.close_button.show()
+        self.disclaimer.setText('DISCLAIMER: Remote photoplethysmography (rPPG) research tool. Subject to optical, camera, and lighting artifacts. Not a medical device; does not replace direct ECG or pulse oximetry.')
+
+    def set_results(self, results):
+        status, detail, action, limitation = rppg_protocol_text(results)
+        self.status_label.setText(status)
+        self.detail_label.setText(detail)
+        self.action_label.setText('PROTOCOL: ' + action)
+        self.limitation_label.setText(limitation)
+        used = ', '.join(('forehead', 'right cheek', 'left cheek')[i] for i in results['used_rois'])
+        metrics = (
+            f"Candidate pulse rate: {results['bpm']:.1f} BPM\n"
+            f"Spectral concentration: {results['concentration']:.1f}%\n"
+            f"Valid coverage: {results['coverage'] * 100:.1f}%\n"
+            f"ROI candidates (forehead / R cheek / L cheek): {' / '.join(f'{bpm:.1f}' for bpm in results['roi_bpm'])} BPM\n"
+            f"Used regions: {used}\n"
+            f"Samples: {results['samples']}; rate: {results['rate']:.1f}/s; duration: {results['duration']:.1f}s\n"
+            f"Largest gap: {results['max_gap']:.3f}s; FFT spacing: {results['resolution_bpm']:.1f} BPM"
+        )
+        self.report = '\n\n'.join([
+            'TECNOMEDNEURO / rPPG PULSE RESEARCH REPORT',
+            f"Recorded: {datetime.now().astimezone().isoformat(timespec='seconds')}",
+            metrics, status, detail, 'PROTOCOL: ' + action, limitation, self.disclaimer.text(),
+        ])
+
+
+class VoiceProtocolPanel(ProtocolPanel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.report_name = 'voice_acoustic_report'
+        self.title_label.setText('VOICE STABILITY / RESEARCH REFERENCES')
+        self.close_button.show()
+        self.disclaimer.setText('DISCLAIMER: Acoustic research prototype. A sustained vowel cannot diagnose dysarthria, dysphonia, or a neurological condition. Recording noise and pitch tracking affect these metrics.')
+
+    def set_results(self, results):
+        flagged = results['jitter_local'] > 1.04 or results['shimmer_local'] > 3.81
+        status = '[REFERENCE EXCEEDED] PERTURBATION OBSERVATION' if flagged else '[OBSERVATION] ACOUSTIC METRICS AVAILABLE'
+        detail = (
+            'Local jitter and local shimmer are compared with legacy MDVP reference values quoted in the Praat manual '
+            '(1.04% and 3.81%). These method-dependent values are not validated clinical cutoffs for this microphone or app. '
+            'Below-reference results do not establish normal speech; above-reference results do not establish disease.'
+        )
+        action = (
+            'Repeat with the same microphone distance and gain in a quiet room if useful. '
+            'Discuss persistent voice or speech changes with a qualified clinician or speech-language professional. '
+            'Sudden speech difficulty, facial droop, or weakness needs immediate emergency assessment; do not wait for another recording.'
+        )
+        limitation = (
+            f"Analyzed pitch band: 75-500 Hz; voiced frames: {results['voiced_fraction'] * 100:.1f}%; "
+            f"recording level: {results['level_dbfs']:.1f} dBFS. HNR has no universal clinical threshold here. "
+            + ' '.join(results['warnings'])
+        )
+        self.status_label.setText(status)
+        self.detail_label.setText(detail)
+        self.action_label.setText('PROTOCOL: ' + action)
+        self.limitation_label.setText(limitation)
+        metrics = (
+            f"Median F0: {results['f0']:.2f} Hz\nJitter local: {results['jitter_local']:.3f}%\n"
+            f"Jitter RAP: {results['jitter_rap']:.3f}%\nShimmer local: {results['shimmer_local']:.3f}%\n"
+            f"Shimmer APQ5: {results['shimmer_apq5']:.3f}%\nHNR (Praat autocorrelation mean): {results['hnr']:.2f} dB\n"
+            f"Sample rate: {results['sample_rate']} Hz; duration: {results['duration']:.2f}s; "
+            f"clipped samples: {results['clipping'] * 100:.3f}%\n"
+            'MFCC mean (13 coefficients): ' + ', '.join(f'{x:.3f}' for x in results['mfcc_mean'])
+        )
+        if results.get('source') == 'file':
+            metrics += (
+                f"\nSource audio file: {results.get('file_name', '')}"
+                f"\nSelected segment starts: {results.get('segment_start_sec', 0):.2f} s"
+                f"\nOriginal file duration: {results.get('source_duration_sec', 0):.2f} s"
+            )
+        else:
+            metrics += '\nSource: microphone recording'
+        if results.get('source') == 'file':
+            metrics += (
+                f"\nSource audio file: {results.get('file_name', '')}"
+                f"\nSelected segment begins at: {results.get('segment_start_sec', 0):.2f} s"
+                f"\nOriginal file duration: {results.get('source_duration_sec', 0):.2f} s"
+            )
+        self.report = '\n\n'.join([
+            'TECNOMEDNEURO / VOICE ACOUSTIC RESEARCH REPORT',
+            f"Recorded: {datetime.now().astimezone().isoformat(timespec='seconds')}", metrics,
+            'Algorithms: Praat via Parselmouth (pitch, periodic pulses, perturbation, harmonicity); librosa YIN, STFT, MFCC.',
+            'Settings: pitch floor 75 Hz, ceiling 500 Hz; period bounds 0.8/500 to 1.25/75 seconds; period factor 1.3; amplitude factor 1.6; first/last 0.3s excluded.',
+            status, detail, action, limitation,
+            'References: https://praat.org/manual/Voice_2__Jitter.html ; https://praat.org/manual/Voice_3__Shimmer.html',
+            self.disclaimer.text(),
         ])

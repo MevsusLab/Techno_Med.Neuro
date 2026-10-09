@@ -373,7 +373,7 @@ class CaptureUITests(unittest.TestCase):
         worker.finished.emit()
         self.assertEqual(self.page.analysis_badge.text(), "COMPLETE")
         self.assertAlmostEqual(float(self.page.m_freq.val.text()), 5, delta=0.2)
-        self.assertIn("Coverage: 100%", self.page.info_label.text())
+        self.assertIn("Покрытие: 100%", self.page.info_label.text())
 
     def test_real_engine_rejects_missing_end_tracking(self):
         self.page.engine = app.TremorEngine()
@@ -384,8 +384,8 @@ class CaptureUITests(unittest.TestCase):
         self.clock.return_value = 115.0
         worker.finished.emit()
         self.assertEqual(self.page.analysis_badge.text(), "INVALID CAPTURE")
-        self.assertIn("start or end", self.page.analysis_detail.text())
-        self.assertIn("Max gap:", self.page.info_label.text())
+        self.assertIn("в начале или конце", self.page.analysis_detail.text())
+        self.assertIn("Наибольший интервал:", self.page.info_label.text())
 
     def test_short_webcam_gaps_render_limited_measurement(self):
         self.page.engine = app.TremorEngine()
@@ -401,7 +401,7 @@ class CaptureUITests(unittest.TestCase):
         worker.finished.emit()
         self.assertEqual(self.page.analysis_badge.text(), "LIMITED BAND")
         self.assertEqual(self.status.badges['DSP'].text(), "LIMITED")
-        self.assertIn("Faster motion cannot be assessed", self.page.analysis_detail.text())
+        self.assertIn("Более быстрые движения не оценивались", self.page.analysis_detail.text())
         self.assertAlmostEqual(float(self.page.m_freq.val.text()), 4, delta=0.2)
 
 

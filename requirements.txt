@@ -4,3 +4,6 @@ opencv-contrib-python==5.0.0.93
 mediapipe==1.0.1
 PyQt6==6.11.0
 matplotlib==3.11.1
+sounddevice==0.5.6
+librosa==1.0.0
+praat-parselmouth==0.4.7

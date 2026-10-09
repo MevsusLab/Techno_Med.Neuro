@@ -300,9 +300,11 @@ def _capture_process(connection, stop, duration, preparation_duration):
 
 
 class ProcessCaptureWorker(CaptureWorker):
-    def __init__(self, duration=15.0, parent=None, preparation_duration=2.0, process_target=_capture_process):
+    def __init__(self, duration=15.0, parent=None, preparation_duration=2.0,
+                 process_target=_capture_process, process_args=()):
         super().__init__(duration, parent, preparation_duration)
         self.process_target = process_target
+        self.process_args = tuple(process_args)
 
     def run(self):
         context = multiprocessing.get_context("spawn")
@@ -310,7 +312,7 @@ class ProcessCaptureWorker(CaptureWorker):
         stop = context.Event()
         process = context.Process(
             target=self.process_target,
-            args=(child_connection, stop, self.duration, self.preparation_duration),
+            args=(child_connection, stop, self.duration, self.preparation_duration, *self.process_args),
             daemon=True,
         )
         cancellation_started = None
@@ -351,6 +353,9 @@ class ProcessCaptureWorker(CaptureWorker):
                     timeout = {
                         "process startup": 30, "model setup": 75, "model initialization": 15,
                         "camera opening": 15, "hand inference": 5, "face inference": 5,
+                        "microphone opening": 15, "microphone read": 3, "voice analysis": 120,
+                        "audio file loading": 120,
+                        "voice dependencies": 120,
                         "resource release": 3, "resource close": 3,
                         "camera read": self._read_timeout + 1,
                     }.get(phase, 10)

@@ -135,9 +135,9 @@ class FaceCaptureTests(unittest.TestCase):
             with patch('app.sys.stderr'):
                 page._finished()
             self.assertEqual(page.badge.text(), 'RETRY')
-            self.assertIn('Expression was too small', page.verdict.text())
-            self.assertIn('smile excursion', page.verdict.text())
-            self.assertIn('brow excursion', page.verdict.text())
+            self.assertIn('Мимическое движение слишком мало', page.verdict.text())
+            self.assertIn('движение уголков рта', page.verdict.text())
+            self.assertIn('движение бровей', page.verdict.text())
             self.assertEqual(page.index.val.text(), '---')
             self.assertTrue(page.start.isEnabled())
         finally:
@@ -158,7 +158,7 @@ class FaceCaptureTests(unittest.TestCase):
         page.worker = worker
         try:
             page._poll()
-            self.assertIn('Smile clearly', page.guidance.text())
+            self.assertIn('Улыбнитесь', page.guidance.text())
             self.assertEqual(page.badge.text(), 'SMILE')
             self.assertLess(page.guidance.geometry().bottom(), page.capture_area.geometry().top())
         finally:

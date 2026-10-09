@@ -114,9 +114,9 @@ class FacialProtocolTests(unittest.TestCase):
             with patch('protocol_panel.QFileDialog.getSaveFileName', return_value=(str(text), '')):
                 panel.save_button.click()
             contents = text.read_text(encoding='utf-8')
-            self.assertIn('FACIAL SYMMETRY', contents)
-            self.assertIn('smile imbalance', contents)
-            self.assertIn('DISCLAIMER: Computational screening utility.', contents)
+            self.assertIn('ОТЧЁТ ОБ ИССЛЕДОВАНИИ СИММЕТРИИ ЛИЦА', contents)
+            self.assertIn('Дисбаланс улыбки', contents)
+            self.assertIn('ОГРАНИЧЕНИЕ:', contents)
             with patch('protocol_panel.QFileDialog.getSaveFileName', return_value=(str(pdf), '')):
                 panel.export_button.click()
             self.assertTrue(pdf.read_bytes().startswith(b'%PDF-'))

@@ -1,12 +1,23 @@
 # TecnoMedNeuro
 
-Desktop research prototype for camera-based hand-motion and facial-symmetry measurement. rPPG, AAC, and voice tabs are interface mockups. This software is not a diagnostic device and cannot identify Parkinson's disease, essential tremor, stroke, facial nerve palsy, or the absence of disease.
+Desktop research prototype for hand-motion, facial-symmetry, green-channel rPPG pulse-rate, and acoustic voice measurement. AAC remains an interface mockup. This software is not a diagnostic device and cannot identify Parkinson's disease, essential tremor, stroke, facial nerve palsy, dysarthria, or the absence of disease.
 
 ## Run
 
-Use Python 3.12 on Windows with a webcam. Install dependencies with `python -m pip install -r requirements.txt`, then run `python app.py`. Hand and face models are downloaded into `models/` on first use if not already present. Run the tests with `python -m unittest test_tremor_engine.py test_capture_ui.py test_process_capture.py test_protocol_panel.py test_facial_engine.py test_face_capture.py`.
+Use Python 3.12 on Windows with a webcam and microphone. Install dependencies with `python -m pip install -r requirements.txt`, then run `python app.py`. Hand and face models are downloaded into `models/` on first use if not already present. Run all tests with `python -m unittest discover -p "test_*.py"`.
+
+Module headings, action buttons, live preparation/expression prompts, post-test explanations, protocol text, and disclaimers are displayed in Russian through `i18n_ru.py`. Technical state codes such as IDLE/COMPLETE, mathematical symbols, and some numerical report/chart labels remain in English. Unknown library error details remain readable in their original form. Localization changes no measurement thresholds or metric keys.
 
 The local `.venv` may be a different Python version and does not necessarily have the dependencies installed; activate the environment you installed into before starting the app.
+
+The project `.venv` uses Python 3.14; voice analysis has now also been checked in this environment. To install and run in that exact environment, use the following PowerShell commands from the project folder:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe app.py
+```
+
+Installing packages into system Python does not install them into `.venv`. The VOICE page checks missing packages before recording and shows a command targeting the interpreter actually running the app. The child process imports the audio-analysis dependencies before opening the microphone; first-use initialization may take some time without requiring you to sustain a vowel.
 
 Each capture owns a separate child process. Camera access, inference, and native cleanup are isolated from the GUI. A supervisor monitors these phases, requests cooperative cancellation, and terminates/reaps a stuck child before another capture is allowed. A timed-out session is not analyzed. This protects the GUI from native hangs and crashes; the actual cause is shown in the capture error. Unexpected Python analysis errors are reported in the UI and terminal without preventing session cleanup or restart. The UI and engine share `analyze(record_start=..., record_end=...)` and the measured-metric result schema; do not mix the old engine file with the current app.
 
@@ -33,3 +44,29 @@ The Face Landmarker Tasks model can return 478 landmarks; the geometric analysis
 Smile excursion includes horizontal and vertical mouth-corner movement from rest. Brow elevation uses outer-eye references rather than moving eyelid points. Movement imbalance is `100 * abs(right-left) / (right+left)` and is withheld if movement is too small. Closed/occluded eyes, blur, poor lighting, small faces, interrupted tracking, too many rejected frames, or changed pose/distance invalidate a trial. Nasolabial fold depth is not measured; nearby cheek landmarks provide only geometric proxies. Fixed yellow-to-red deviation scales show landmark mismatch, not pathology. Rest, smile, and brows can be inspected separately after completion.
 
 Facial observation supports only the Face component of FAST, not the complete Face/Arm/Speech/Time protocol. Sudden facial drooping, arm weakness, or speech difficulty requires immediate emergency assessment. Do not wait for this software or rely on a low score to exclude stroke. Human/camera-reference validation remains necessary before any clinical application.
+
+## Contactless rPPG
+
+Open rPPG and press START MEASUREMENT. Keep one face directly facing the camera, with forehead and upper cheeks uncovered. Use constant diffuse frontal light, sit still, and avoid speaking or facial movements. The app waits three seconds for stable skin regions before a 30-second capture. STOP cancels the trial; RESET discards it. Only one camera module can capture at a time.
+
+The face model defines three inset skin polygons. Mean RGB values are extracted before preview overlays; analysis uses the green channel. Actual timestamps are resampled, fractional green variation is detrended, and a fourth-order zero-phase Butterworth filter isolates 0.75-3 Hz. FFT power estimates a candidate pulse rate in the 45-180 BPM range. At least two regions must have clear, agreeing peaks; the two recording halves must also agree. Slow head-position drift and brief pose outliers do not automatically reject the trial: if the pulse checks pass, the UI shows BPM with an amber **CHECK QUALITY / ESTIMATE / CAUTION** status. Large sustained repositioning, rapid repeated motion, missing samples, exposure jumps, and strong correlation with motion/background lighting can still reject the trial. Rejection is shown in the results panel with BPM withheld.
+
+This is an unvalidated research estimate. ROI agreement cannot guarantee that shared light/camera artifacts have been excluded. Skin tone, exposure, hair, makeup, glasses, movement, camera processing, and illumination affect performance. Spectral concentration is not clinical confidence. The plotted pulse wave is filtered camera intensity, not a calibrated arterial waveform; no SpO2, blood pressure, arrhythmia, or diagnostic assessment is provided. Physical comparison with a reference pulse sensor remains necessary.
+
+After a completed estimate, including a drift-caution estimate, the left viewport splits approximately 50/50 between video and a scrollable Vitals Screening protocol panel. Reset, new capture, or `[X]` restores full-height video; rejected/cancelled sessions keep the panel hidden. Text/PDF exports include the estimate, capture-quality values, used ROIs, all-region spread, cautions, and disclaimer. The panel uses stricter exploratory interpretation rules (<70% coverage, <60% spectral concentration, or >5 BPM all-ROI spread) before rate bands below 60, 60-95, or above 95 BPM. These do not diagnose bradycardia/tachycardia or establish normal circulation. All-region spread can include an ROI excluded by the engine; a withheld protocol interpretation is distinct from engine acceptance of a candidate estimate.
+
+Run all tests with `python -m unittest discover -p "test_*.py"`. Tests cover synthetic signal cases, module state/layout, report exports, localization, cancellation, and process recovery. The project's `.venv` was identified as the environment missing librosa/Parselmouth; its pinned dependencies have now been installed and the full suite has been run there.
+
+## Voice Acoustics
+
+Open ГОЛОС and choose **ЗАПИСАТЬ ГОЛОС** to record or **ЗАГРУЗИТЬ АУДИОФАЙЛ** to analyze a saved recording. File selection accepts WAV, FLAC, OGG, MP3, M4A and AAC; actual codec support depends on the installed audio decoder. Files are limited to 10 minutes / 100 MB. For longer files, the app selects a continuous five-second voiced segment and records its start offset in the report. A usable input needs at least five seconds of sustained «А»; ordinary sentences are not the intended sample.
+
+For microphone capture, use a quiet room, keep a consistent distance, and sustain a comfortable «А» for five seconds. Do not force pitch or loudness. The app waits for voice onset before starting the five-second timer, so silence while preparing does not consume the sample. STOP cancels the recording; RESET clears measurements. The default system input device is used in mono at its native sample rate (16-96 kHz). Microphone capture and acoustic analysis run in an isolated process, with timeouts and cleanup; first-use librosa initialization may take longer.
+
+After preparation, the microphone waits for sound before starting the five-second timer. Begin «А» when the prompt asks you to start, and continue until PROCESSING appears. At least 80 ms of consecutive sound above RMS 0.005 is required to trigger recording; the detected onset is included in the five-second buffer. Silence before onset is discarded. If sound is not detected within ten seconds, check the default system microphone and input level. Detection is an amplitude gate, not vowel recognition; background noise can trigger it, so use a quiet room. Recording/analysis errors are displayed in the result panel and printed to the terminal.
+
+The module reports median F0, local jitter, local shimmer, and autocorrelation HNR using Praat via Parselmouth. RAP jitter and APQ5 shimmer are additional explicitly named measurements. Librosa provides an independent YIN pitch check, resampling, STFT spectrogram, and 13 mean MFCC coefficients included in reports. The displayed views are waveform, pitch curve, and spectrogram. Text/PDF reports include acoustic settings, recording quality, warnings, and Russian reference guidance. No raw audio is saved automatically and there is no speech synthesis; pyttsx3 is not required by this feature.
+
+Clipping, excessive silence, low level, insufficient voiced frames, undefined cycle metrics, and disagreement between pitch estimators reject the recording. The first and last 0.3 seconds are omitted from acoustic measurement. A rejected trial is not evidence of disease or its absence; very irregular voices may not be measurable with these methods. The 75-500 Hz pitch band is a measurement limit, not a normal range.
+
+Local jitter (1.04%) and shimmer (3.81%) are compared only with legacy MDVP references quoted in the Praat manual. They are method-dependent and not validated diagnostic cutoffs for this app. HNR has no universal clinical threshold here. A sustained vowel assesses phonation, not articulation, intelligibility, or all components of dysarthria. Persistent voice/speech changes require professional assessment; sudden speech difficulty, facial droop, or weakness requires immediate emergency help.

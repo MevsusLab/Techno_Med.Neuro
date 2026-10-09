@@ -9,15 +9,21 @@ from matplotlib.figure import Figure
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QStackedWidget, QFrame, QGridLayout,
-    QSizePolicy, QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView, QComboBox
+    QSizePolicy, QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
+    QFileDialog
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QImage, QPixmap
 from tremor_engine import TremorEngine
 from capture_worker import ProcessCaptureWorker as CaptureWorker
-from protocol_panel import ProtocolPanel, FacialProtocolPanel
+from protocol_panel import ProtocolPanel, FacialProtocolPanel, RPPGProtocolPanel, VoiceProtocolPanel
 from face_capture import FaceCaptureWorker
 from facial_engine import analyze_stage, compare_stages, PAIRS
+from rppg_capture import RPPGCaptureWorker
+from rppg_engine import RPPGEngine
+from voice_capture import VoiceCaptureWorker, VoiceFileCaptureWorker
+from voice_dependencies import check_voice_dependencies
+from i18n_ru import RussianLabel as QLabel, ru
 
 
 BG = "#FFFFFF"
@@ -47,7 +53,8 @@ def f_mono(size=11, bold=False):
 
 
 def make_status_badge(text, color=TEXT_MUTED):
-    lbl = QLabel(text)
+    from PyQt6.QtWidgets import QLabel as StatusLabel
+    lbl = StatusLabel(text)
     lbl.setFont(f_mono(8, True))
     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
     lbl.setFixedHeight(18)
@@ -199,7 +206,7 @@ def graph_area(title="SIGNAL"):
 
 
 def cmd_button(text, primary=True):
-    btn = QPushButton(text)
+    btn = QPushButton(ru(text))
     btn.setFont(f_sans(10, True))
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     btn.setFixedHeight(30)
@@ -310,7 +317,7 @@ class NavBar(QWidget):
         lay.addWidget(sep)
         self.buttons = []
         for i, label in enumerate(tabs):
-            btn = QPushButton(label)
+            btn = QPushButton(ru(label))
             btn.setFont(f_sans(9))
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setCheckable(True)
@@ -399,7 +406,7 @@ class DashboardPage(QWidget):
             ("Version", "0.1.0-alpha"),
             ("Backend", "MediaPipe + SciPy DSP"),
             ("Input", "USB Webcam + Microphone"),
-            ("Modules", "2 prototypes / 3 planned"),
+            ("Modules", "4 prototypes / 1 planned"),
             ("Framework", "PyQt6 / OpenCV"),
         ]):
             kl = QLabel(k)
@@ -429,12 +436,12 @@ class DashboardPage(QWidget):
         for r, (name, typ, st) in enumerate([
             ("Hand Motion", "Research", "PROTOTYPE"),
             ("Facial Asymmetry", "Research", "PROTOTYPE"),
-            ("rPPG Vitals", "Monitoring", "PLANNED"),
+            ("rPPG Vitals", "Research", "PROTOTYPE"),
             ("Eye-Tracking AAC", "Assistive", "PLANNED"),
-            ("Voice Biomarkers", "Research", "PLANNED"),
+            ("Voice Biomarkers", "Research", "PROTOTYPE"),
         ]):
-            table.setItem(r, 0, QTableWidgetItem(name))
-            table.setItem(r, 1, QTableWidgetItem(typ))
+            table.setItem(r, 0, QTableWidgetItem(ru(name)))
+            table.setItem(r, 1, QTableWidgetItem(ru(typ)))
             item = QTableWidgetItem(st)
             item.setForeground(QColor(TEXT_DIM))
             table.setItem(r, 2, item)
@@ -460,7 +467,7 @@ class DashboardPage(QWidget):
         for name, desc in [
             ("TREMOR", "Webcam hand-motion measurements: frequency, RMS displacement and spectrum"),
             ("FACIAL", "Rest / smile / brow-raise bilateral geometry and movement measurements"),
-            ("VOICE", "Planned: acoustic features from sustained phonation"),
+            ("VOICE", "Sustained vowel: F0, local jitter/shimmer, RAP/APQ5 and HNR"),
         ]:
             row = QHBoxLayout()
             tag = QLabel(name)
@@ -478,7 +485,7 @@ class DashboardPage(QWidget):
         assist_panel, assist_lay = panel("Assistive + Monitoring")
         for name, desc in [
             ("AAC", "Planned: eye-gaze communication board with dwell-time activation"),
-            ("rPPG", "Planned: camera-based pulse-rate research prototype"),
+            ("rPPG", "Skin-region green-channel pulse-rate research prototype"),
         ]:
             row = QHBoxLayout()
             tag = QLabel(name)
@@ -1328,20 +1335,32 @@ class FacialPage(QWidget):
 
 
 class RPPGPage(QWidget):
-    def __init__(self):
+    capture_finished = pyqtSignal()
+
+    def __init__(self, status_bar=None):
         super().__init__()
+        self.status_bar = status_bar
+        self.worker = None
+        self.engine = RPPGEngine()
+        self.cancelled = False
+        self.closing = False
+        self.frames = 0
+        self.last_wave = 0
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._poll)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(8)
         header = QHBoxLayout()
-        title = QLabel("CONTACTLESS rPPG / PLANNED")
+        title = QLabel("CONTACTLESS rPPG / HEART RATE ESTIMATE")
         title.setFont(f_sans(13, True))
         title.setStyleSheet(f"color: {TEXT};")
         header.addWidget(title)
         header.addStretch()
-        header.addWidget(make_status_badge("PLANNED", TEXT_MUTED))
+        self.badge = make_status_badge('IDLE', TEXT_MUTED)
+        header.addWidget(self.badge)
         layout.addLayout(header)
-        sub = QLabel("Interface preview only  |  No pulse measurement is implemented")
+        sub = QLabel("Green-channel skin modulation | 0.75-3.0 Hz / 45-180 BPM | 30-second trial | Research estimate, not a clinical monitor")
         sub.setFont(f_mono(8))
         sub.setStyleSheet(f"color: {TEXT_MUTED};")
         layout.addWidget(sub)
@@ -1349,26 +1368,244 @@ class RPPGPage(QWidget):
         body.setSpacing(8)
         left = QVBoxLayout()
         left.setSpacing(8)
-        left.addWidget(feed_panel("ROI TRACKING (FOREHEAD + CHEEKS)"))
+        self.guidance = QLabel('Sit still, keep the forehead uncovered, use steady diffuse light. Avoid speaking during capture.')
+        self.guidance.setWordWrap(True)
+        self.guidance.setFont(f_mono(9))
+        left.addWidget(self.guidance)
+        self.video = VideoLabel('SKIN ROI PREVIEW / FOREHEAD AND UPPER CHEEKS')
+        self.video.setMinimumSize(480, 0)
+        self.video.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.video.setStyleSheet(f'background: {NAVY}; color: #94A3B8; border: 1px solid {BORDER};')
+        self.capture_area = QWidget()
+        self.capture_area.setMinimumSize(0, 0)
+        self.capture_layout = QVBoxLayout(self.capture_area)
+        self.capture_layout.setContentsMargins(0, 0, 0, 0)
+        self.capture_layout.setSpacing(0)
+        self.capture_layout.addWidget(self.video, 1)
+        self.protocol_panel = RPPGProtocolPanel()
+        self.protocol_panel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.capture_layout.addWidget(self.protocol_panel, 1)
+        left.addWidget(self.capture_area, 1)
         controls = QHBoxLayout()
         controls.setSpacing(6)
-        controls.addWidget(planned_button("START MEASUREMENT"))
-        controls.addWidget(planned_button("STOP", primary=False))
+        self.start = cmd_button('START MEASUREMENT')
+        self.stop = cmd_button('STOP', primary=False)
+        self.reset = cmd_button('RESET', primary=False)
+        self.start.clicked.connect(self._start)
+        self.stop.clicked.connect(self._stop)
+        self.reset.clicked.connect(self._reset)
+        self.stop.setEnabled(False)
+        controls.addWidget(self.start)
+        controls.addWidget(self.stop)
+        controls.addWidget(self.reset)
         left.addLayout(controls)
-        left.addWidget(thin_progress())
+        self.progress = thin_progress()
+        left.addWidget(self.progress)
         body.addLayout(left, 3)
         right = QVBoxLayout()
         right.setSpacing(8)
-        bpm_panel, bpm_lay, _ = panel_with_badge("Heart Rate", "PLANNED", TEXT_MUTED)
-        bpm_lay.addWidget(metric_readout_large("BPM", "---", "bpm", NAVY))
+        bpm_panel, bpm_lay, self.analysis_badge = panel_with_badge("Heart Rate Estimate", "WAITING", TEXT_MUTED)
+        self.bpm = MetricDisplay('Estimated pulse rate', '---', 'BPM')
+        self.bpm.val.setFont(f_mono(30, True))
+        bpm_lay.addWidget(self.bpm)
         qual_row = QHBoxLayout()
-        qual_row.addWidget(metric_readout("Signal Quality", "---"))
+        self.concentration = MetricDisplay('Spectral concentration', '---', '%')
+        self.coverage = MetricDisplay('Valid coverage', '---', '%')
+        qual_row.addWidget(self.concentration)
+        qual_row.addWidget(self.coverage)
         bpm_lay.addLayout(qual_row)
+        self.detail = QLabel('No estimate yet. Timing and skin-region agreement are checked before BPM is displayed.')
+        self.detail.setFont(f_mono(8))
+        self.detail.setTextFormat(Qt.TextFormat.PlainText)
+        self.detail.setWordWrap(True)
+        self.detail.setStyleSheet(f'color: {TEXT_DIM}; border: none;')
+        bpm_lay.addWidget(self.detail)
         right.addWidget(bpm_panel)
-        right.addWidget(graph_area("PULSE WAVEFORM (GREEN CHANNEL)"))
-        right.addWidget(graph_area("FFT SPECTRUM / BPM PEAK"))
+        self.wave = PlotCanvas()
+        self.spectrum = PlotCanvas()
+        right.addWidget(self.wave, 1)
+        right.addWidget(self.spectrum, 1)
         body.addLayout(right, 2)
         layout.addLayout(body)
+
+    def _reset(self):
+        self.protocol_panel.clear()
+        if self.worker is not None:
+            self._stop()
+        else:
+            self.cancelled = False
+        self.engine.reset()
+        self.frames = 0
+        self.last_wave = 0
+        self.progress.setValue(0)
+        self.bpm.set_value('---')
+        self.concentration.set_value('---')
+        self.coverage.set_value('---')
+        self.wave.clear_plot()
+        self.spectrum.clear_plot()
+        self.video.setText('SKIN ROI PREVIEW / FOREHEAD AND UPPER CHEEKS')
+        self.detail.setText('Sit still under constant light. BPM appears only after a valid completed recording.')
+        self.guidance.setText('Sit still, keep the forehead uncovered, use steady diffuse light. Avoid speaking during capture.')
+        set_badge(self.badge, 'IDLE', TEXT_MUTED)
+        set_badge(self.analysis_badge, 'WAITING', TEXT_MUTED)
+        self.start.setEnabled(self.worker is None and not self.closing)
+        self.stop.setEnabled(False)
+
+    def _start(self):
+        if self.worker is not None or self.closing:
+            return
+        self._reset()
+        self.worker = RPPGCaptureWorker(self)
+        self.worker.finished.connect(self._finished)
+        self.worker.failed.connect(self._failed)
+        self.worker.status.connect(self._status)
+        self.start.setEnabled(False)
+        self.stop.setEnabled(True)
+        set_badge(self.badge, 'STARTING', AMBER)
+        self.guidance.setText('Starting the face model and camera; prepare for a 30-second resting capture.')
+        if self.status_bar:
+            self.status_bar.update_badge('DSP', 'STANDBY', TEXT_MUTED)
+        self.timer.start(40)
+        self.worker.start()
+
+    def _status(self, text):
+        if not self.cancelled and self.worker is not None and self.frames == 0:
+            self.detail.setText('Setup: ' + text)
+
+    def _failed(self, message):
+        if not self.cancelled:
+            self.protocol_panel.clear()
+            self.detail.setText(message)
+            set_badge(self.badge, 'CAPTURE ERROR', RED)
+
+    def _stop(self):
+        self.cancelled = True
+        if self.worker is not None:
+            self.worker.requestInterruption()
+            self.stop.setEnabled(False)
+            set_badge(self.badge, 'STOPPING', AMBER)
+
+    def _poll(self):
+        try:
+            self._drain()
+        except Exception as exc:
+            self._failed(f'Preview failed: {exc}')
+            self._stop()
+
+    def _drain(self):
+        if self.worker is None:
+            return
+        latest, samples = self.worker.take_pending()
+        if self.cancelled:
+            return
+        for sample in samples:
+            self.engine.add_sample(sample)
+        if latest is not None:
+            self.frames = latest['frames']
+            self.guidance.setText(latest['message'])
+            self.progress.setValue(int(latest['progress'] * 100))
+            set_badge(self.badge, 'RECORDING' if latest['start'] is not None else 'PREPARING', GREEN)
+            image = latest['image']
+            h, w = image.shape[:2]
+            self.video.setPixmap(QPixmap.fromImage(QImage(image.data, w, h, image.strides[0], QImage.Format.Format_RGB888)))
+            if self.status_bar:
+                self.status_bar.update_badge('CAM', 'ACTIVE', GREEN)
+                self.status_bar.update_badge('MEDIAPIPE', 'FACE LOADED', GREEN)
+        if len(self.engine.samples) > 10 and time.perf_counter() - self.last_wave > 0.7:
+            self.last_wave = time.perf_counter()
+            t = np.array([sample['timestamp'] for sample in self.engine.samples])
+            green = np.array([sample['rgb'][:, 1].mean() for sample in self.engine.samples])
+            self.wave.clear_plot()
+            self.wave.ax.plot(t - t[0], green, color=NAVY, linewidth=0.7)
+            self.wave.ax.set_title('RAW MEAN GREEN / NOT YET A PULSE ESTIMATE', fontsize=8)
+            self.wave.ax.set_xlabel('Time (s)', fontsize=7)
+            self.wave.ax.set_ylabel('Intensity (0-255)', fontsize=7)
+            self.wave.draw_idle()
+
+    def _finished(self):
+        worker = self.worker
+        if worker is None:
+            return
+        try:
+            self._drain()
+            if not self.cancelled:
+                if worker.error:
+                    raise ValueError(worker.error)
+                if worker.reason != 'deadline':
+                    raise ValueError('Capture ended before the full rPPG trial completed.')
+                start, end, _, _ = worker.snapshot()
+                result = self.engine.analyze(start, end, self.frames)
+                if result is None:
+                    raise ValueError(self.engine.last_error)
+                self._render(result)
+            else:
+                set_badge(self.badge, 'IDLE', TEXT_MUTED)
+                self.video.setText('MEASUREMENT CANCELLED')
+        except Exception as exc:
+            self.bpm.set_value('---')
+            self.protocol_panel.clear()
+            self.concentration.set_value('---')
+            self.coverage.set_value('---')
+            self.detail.setText(str(exc))
+            self.spectrum.clear_plot()
+            self.video.setText('MEASUREMENT ENDED / RETRY REQUIRED')
+            set_badge(self.badge, 'RETRY', AMBER)
+            set_badge(self.analysis_badge, 'REJECTED', AMBER)
+            self.guidance.setText('Measurement ended. See the rejection reason in the Heart Rate Estimate panel.')
+            if self.status_bar:
+                self.status_bar.update_badge('DSP', 'REJECTED', AMBER)
+        finally:
+            self.timer.stop()
+            self.worker = None
+            worker.deleteLater()
+            self.start.setEnabled(not self.closing)
+            self.stop.setEnabled(False)
+            if self.status_bar:
+                self.status_bar.update_badge('CAM', 'DISCONNECTED', TEXT_MUTED)
+                self.status_bar.update_badge('MEDIAPIPE', 'NOT LOADED', TEXT_MUTED)
+            self.capture_finished.emit()
+
+    def _render(self, result):
+        warnings = result['warnings']
+        self.bpm.set_value(f"{result['bpm']:.0f}")
+        self.concentration.set_value(f"{result['concentration']:.1f}")
+        self.coverage.set_value(f"{result['coverage'] * 100:.0f}")
+        self.detail.setText(
+            f"{result['samples']} samples, {result['rate']:.1f}/s, FFT bin spacing {result['resolution_bpm']:.1f} BPM. "
+            f"ROI estimates: {', '.join(f'{value:.0f}' for value in result['roi_bpm'])} BPM. "
+            + (' '.join(warnings) + ' ' if warnings else '') +
+            'Research estimate only; shared lighting artifacts cannot always be excluded. No SpO2 measurement.'
+        )
+        self.wave.clear_plot()
+        self.wave.ax.plot(result['time'], result['pulse'], color=NAVY, linewidth=0.7)
+        self.wave.ax.set_title('FILTERED GREEN MODULATION / 0.75-3.0 Hz', fontsize=8)
+        self.wave.ax.set_xlabel('Time (s)', fontsize=7)
+        self.wave.ax.set_ylabel('Fractional intensity (%)', fontsize=7)
+        self.wave.draw_idle()
+        self.spectrum.clear_plot()
+        self.spectrum.ax.plot(result['frequencies'] * 60, result['spectrum'], color=NAVY, linewidth=0.8)
+        self.spectrum.ax.axvline(result['bpm'], color=RED, linestyle='--', linewidth=1)
+        self.spectrum.ax.set_xlim(45, 180)
+        self.spectrum.ax.set_title('NORMALIZED FFT POWER / PULSE CANDIDATE', fontsize=8)
+        self.spectrum.ax.set_xlabel('Pulse rate (BPM)', fontsize=7)
+        self.spectrum.ax.set_ylabel('Normalized power', fontsize=7)
+        self.spectrum.draw_idle()
+        self.progress.setValue(100)
+        self.video.setText('RECORDING COMPLETE / SEE ESTIMATE')
+        set_badge(self.badge, 'CHECK QUALITY' if warnings else 'COMPLETE', AMBER if warnings else GREEN)
+        set_badge(self.analysis_badge, 'ESTIMATE / CAUTION' if warnings else 'ACCEPTED', AMBER if warnings else GREEN)
+        self.guidance.setText('Measurement complete. A camera-derived pulse estimate needs validation against a reference sensor.')
+        if self.status_bar:
+            self.status_bar.update_badge('DSP', 'CAUTION' if warnings else 'COMPLETE', AMBER if warnings else GREEN)
+        self.protocol_panel.set_results(result)
+        self.protocol_panel.show()
+
+    def cleanup(self):
+        self.closing = True
+        self._stop()
+        self.start.setEnabled(False)
+        self.reset.setEnabled(False)
+        return self.worker is None
 
 
 class AACPage(QWidget):
@@ -1455,72 +1692,278 @@ class AACPage(QWidget):
 
 
 class VoicePage(QWidget):
-    def __init__(self):
+    capture_finished = pyqtSignal()
+
+    def __init__(self, status_bar=None):
         super().__init__()
+        self.status_bar = status_bar
+        self.worker = None
+        self.cancelled = False
+        self.closing = False
+        self.result = None
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._poll)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(8)
         header = QHBoxLayout()
-        title = QLabel("VOICE BIOMARKERS / PLANNED")
+        title = QLabel("VOICE BIOMARKERS / ACOUSTIC ANALYSIS")
         title.setFont(f_sans(13, True))
         title.setStyleSheet(f"color: {TEXT};")
         header.addWidget(title)
         header.addStretch()
-        header.addWidget(make_status_badge("PLANNED", TEXT_MUTED))
+        self.badge = make_status_badge('IDLE', TEXT_MUTED)
+        header.addWidget(self.badge)
         layout.addLayout(header)
-        sub = QLabel("Interface preview only  |  No audio recording or voice assessment is implemented")
+        sub = QLabel("Sustained vowel /a/ | 5 seconds | Praat perturbation metrics + librosa | Research use only")
         sub.setFont(f_mono(8))
         sub.setStyleSheet(f"color: {TEXT_MUTED};")
         layout.addWidget(sub)
         top = QHBoxLayout()
         top.setSpacing(8)
-        rec_panel, rec_lay, _ = panel_with_badge("Recording", "PLANNED", TEXT_MUTED)
-        timer_val = QLabel("0.0 / 5.0")
-        timer_val.setFont(f_mono(28, True))
-        timer_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        timer_val.setStyleSheet(f"color: {TEXT}; border: none;")
-        rec_lay.addWidget(timer_val)
+        rec_panel, rec_lay, _ = panel_with_badge("Recording", "МИКРОФОН", TEXT_MUTED)
+        self.time_label = QLabel("0.0 / 5.0")
+        self.time_label.setFont(f_mono(28, True))
+        self.time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.time_label.setStyleSheet(f"color: {TEXT}; border: none;")
+        rec_lay.addWidget(self.time_label)
         timer_unit = QLabel("seconds")
         timer_unit.setFont(f_mono(9))
         timer_unit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         timer_unit.setStyleSheet(f"color: {TEXT_MUTED}; border: none;")
         rec_lay.addWidget(timer_unit)
-        rec_lay.addWidget(thin_progress())
-        rec_lay.addStretch()
-        rec_lay.addWidget(planned_button("START RECORDING"))
+        self.progress = thin_progress()
+        rec_lay.addWidget(self.progress)
+        self.level = MetricDisplay('Peak input level', '---', 'dBFS')
+        rec_lay.addWidget(self.level)
+        self.guidance = QLabel('Use a quiet room. Sustain Ah at a comfortable, steady volume and pitch for five seconds. Keep microphone distance fixed.')
+        self.guidance.setWordWrap(True)
+        self.guidance.setStyleSheet(f'color: {TEXT_DIM}; border: none;')
+        rec_lay.addWidget(self.guidance)
+        controls = QHBoxLayout()
+        self.start = cmd_button('START RECORDING')
+        self.start.setToolTip('Новая запись с микрофона. Скажите протяжный звук «А» после начала отсчёта.')
+        self.upload = cmd_button('UPLOAD AUDIO FILE', primary=False)
+        self.stop = cmd_button('STOP', primary=False)
+        self.reset = cmd_button('RESET', primary=False)
+        self.start.clicked.connect(self._start)
+        self.upload.clicked.connect(self._upload)
+        self.stop.clicked.connect(self._stop)
+        self.reset.clicked.connect(self._reset)
+        self.stop.setEnabled(False)
+        for button in (self.start, self.upload, self.stop, self.reset):
+            controls.addWidget(button)
+        rec_lay.addLayout(controls)
         top.addWidget(rec_panel, 1)
         met_panel, met_lay = panel("Acoustic Metrics")
         met_grid = QGridLayout()
         met_grid.setSpacing(2)
-        met_grid.addWidget(metric_readout("F0 (Fundamental)", "---", "Hz"), 0, 0)
-        met_grid.addWidget(metric_readout("Jitter (RAP)", "---", "%"), 0, 1)
-        met_grid.addWidget(metric_readout("Shimmer (APQ)", "---", "%"), 1, 0)
-        met_grid.addWidget(metric_readout("HNR", "---", "dB"), 1, 1)
+        self.f0 = MetricDisplay('Median F0', '---', 'Hz')
+        self.jitter = MetricDisplay('Jitter (local)', '---', '%')
+        self.shimmer = MetricDisplay('Shimmer (local)', '---', '%')
+        self.hnr = MetricDisplay('HNR (autocorrelation)', '---', 'dB')
+        met_grid.addWidget(self.f0, 0, 0)
+        met_grid.addWidget(self.jitter, 0, 1)
+        met_grid.addWidget(self.shimmer, 1, 0)
+        met_grid.addWidget(self.hnr, 1, 1)
         met_lay.addLayout(met_grid)
+        self.detail = QLabel('No result yet. A sustained vowel does not assess speech articulation or diagnose dysarthria.')
+        self.detail.setWordWrap(True)
+        self.detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.detail.setStyleSheet(f'color: {TEXT_DIM}; border: none;')
+        met_lay.addWidget(self.detail)
         top.addWidget(met_panel, 1)
         layout.addLayout(top)
         graphs = QHBoxLayout()
         graphs.setSpacing(8)
-        graphs.addWidget(graph_area("AUDIO WAVEFORM"))
-        graphs.addWidget(graph_area("FREQUENCY SPECTRUM (FFT)"))
-        graphs.addWidget(graph_area("MFCC COEFFICIENTS"))
-        layout.addLayout(graphs)
-        result_panel, result_lay = panel("Assessment")
-        r_row = QHBoxLayout()
-        r_lbl = QLabel("Vocal stability assessment will be computed after recording")
-        r_lbl.setFont(f_mono(9))
-        r_lbl.setStyleSheet(f"color: {TEXT_MUTED}; border: none;")
-        r_row.addWidget(r_lbl)
-        r_row.addStretch()
-        r_row.addWidget(planned_button("EXPORT REPORT", primary=False))
-        result_lay.addLayout(r_row)
-        layout.addWidget(result_panel)
+        self.wave = PlotCanvas()
+        self.pitch_plot = PlotCanvas()
+        self.spectrogram = PlotCanvas()
+        for plot in (self.wave, self.pitch_plot, self.spectrogram):
+            graphs.addWidget(plot, 1)
+        layout.addLayout(graphs, 1)
+        self.protocol_panel = VoiceProtocolPanel()
+        layout.addWidget(self.protocol_panel, 1)
+
+    def _reset(self):
+        if self.worker is not None:
+            self._stop()
+        else:
+            self.cancelled = False
+        self.result = None
+        self.protocol_panel.clear()
+        self.time_label.setText('0.0 / 5.0')
+        self.progress.setValue(0)
+        for metric in (self.f0, self.jitter, self.shimmer, self.hnr, self.level):
+            metric.set_value('---')
+        for plot in (self.wave, self.pitch_plot, self.spectrogram):
+            plot.clear_plot()
+        self.detail.setText('No result yet. A sustained vowel does not assess speech articulation or diagnose dysarthria.')
+        self.guidance.setText('Use a quiet room. Sustain Ah at a comfortable, steady volume and pitch for five seconds. Keep microphone distance fixed.')
+        set_badge(self.badge, 'IDLE', TEXT_MUTED)
+        self.start.setEnabled(self.worker is None and not self.closing)
+        self.upload.setEnabled(self.worker is None and not self.closing)
+        self.stop.setEnabled(False)
+
+    def _start(self):
+        if self.worker is not None or self.closing or not self._check_dependencies():
+            return
+        self._begin(VoiceCaptureWorker)
+
+    def _check_dependencies(self):
+        try:
+            check_voice_dependencies()
+            return True
+        except RuntimeError as exc:
+            self.detail.setText(str(exc))
+            self.guidance.setText('Не хватает библиотек для анализа голоса. Установите зависимости указанной командой; запись пока не начата.')
+            set_badge(self.badge, 'DEPENDENCY ERROR', RED)
+            return False
+
+    def _upload(self):
+        if self.worker is not None or self.closing or not self._check_dependencies():
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, 'Выберите аудиофайл с протяжным звуком «А»', '',
+            'Аудиофайлы (*.wav *.flac *.ogg *.mp3 *.m4a *.aac *.aiff *.aif);;Все файлы (*.*)'
+        )
+        if not path:
+            return
+        self._begin(VoiceFileCaptureWorker, path)
+
+    def _stop(self):
+        self.cancelled = True
+        if self.worker is not None:
+            self.worker.requestInterruption()
+            self.stop.setEnabled(False)
+            set_badge(self.badge, 'STOPPING', AMBER)
+
+    def _begin(self, worker_type, *args):
+        self._reset()
+        self.cancelled = False
+        self.result = None
+        self.protocol_panel.clear()
+        self.start.setEnabled(False)
+        self.upload.setEnabled(False)
+        self.stop.setEnabled(True)
+        set_badge(self.badge, 'STARTING', AMBER)
+        if self.status_bar:
+            self.status_bar.update_badge('MIC', 'STARTING', AMBER)
+        self.worker = worker_type(*args, parent=self)
+        self.worker.finished.connect(self._finished)
+        self.worker.failed.connect(self._failed)
+        self.timer.start(40)
+        self.worker.start()
+
+    def _failed(self, message):
+        if not self.cancelled:
+            self.detail.setText(message)
+            set_badge(self.badge, 'RETRY', AMBER)
+
+    def _poll(self):
+        try:
+            self._drain()
+        except Exception as exc:
+            self._failed(str(exc))
+            self._stop()
+
+    def _drain(self):
+        if self.worker is None:
+            return
+        latest, _ = self.worker.take_pending()
+        if latest is None or self.cancelled:
+            return
+        self.time_label.setText(f"{latest['elapsed']:.1f} / 5.0")
+        self.progress.setValue(int(latest['elapsed'] * 20))
+        self.guidance.setText(latest['message'])
+        set_badge(self.badge, latest['state'], GREEN if latest['state'] == 'RECORDING' else AMBER)
+        if latest['level'] > 0:
+            self.level.set_value(f"{20 * np.log10(latest['level']):.1f}")
+        if 'result' in latest:
+            self.result = latest['result']
+        if self.status_bar:
+            self.status_bar.update_badge('MIC', 'ACTIVE' if latest['state'] == 'RECORDING' else 'STANDBY', GREEN)
+
+    def _finished(self):
+        worker = self.worker
+        if worker is None:
+            return
+        try:
+            self._drain()
+            if not self.cancelled:
+                if worker.error:
+                    raise ValueError(worker.error)
+                if worker.reason != 'deadline' or self.result is None:
+                    raise ValueError('Voice recording or analysis did not complete.')
+                self._render(self.result)
+            else:
+                set_badge(self.badge, 'IDLE', TEXT_MUTED)
+        except Exception as exc:
+            self.result = None
+            self.protocol_panel.clear()
+            for metric in (self.f0, self.jitter, self.shimmer, self.hnr):
+                metric.set_value('---')
+            self.detail.setText(str(exc))
+            self.guidance.setText('Запись или анализ не завершены. Причина и рекомендации указаны в панели акустических показателей справа.')
+            print(f'VOICE recording/analysis failed: {exc}', file=sys.stderr)
+            set_badge(self.badge, 'RETRY', AMBER)
+        finally:
+            self.timer.stop()
+            self.worker = None
+            worker.deleteLater()
+            self.start.setEnabled(not self.closing)
+            self.upload.setEnabled(not self.closing)
+            self.stop.setEnabled(False)
+            if self.status_bar:
+                self.status_bar.update_badge('MIC', 'DISCONNECTED', TEXT_MUTED)
+            self.capture_finished.emit()
+
+    def _render(self, result):
+        for metric, key, digits in ((self.f0, 'f0', 1), (self.jitter, 'jitter_local', 3),
+                                    (self.shimmer, 'shimmer_local', 3), (self.hnr, 'hnr', 1)):
+            metric.set_value(f"{result[key]:.{digits}f}")
+        self.detail.setText(
+            f"Voiced frames: {result['voiced_fraction']*100:.1f}%; level: {result['level_dbfs']:.1f} dBFS. "
+            f"Jitter RAP: {result['jitter_rap']:.3f}%; shimmer APQ5: {result['shimmer_apq5']:.3f}%. "
+            + ' '.join(result['warnings'])
+        )
+        if result.get('source') == 'file':
+            self.detail.setText(
+                f"Файл: {result.get('file_name', '')}; выбранный фрагмент: {result.get('segment_start_sec', 0):.2f} с; "
+                + self.detail.text()
+            )
+        for plot in (self.wave, self.pitch_plot, self.spectrogram):
+            plot.clear_plot()
+        self.wave.ax.plot(result['wave_time'], result['wave'], color=NAVY, linewidth=0.4)
+        self.wave.ax.set_title('VOICE WAVEFORM', fontsize=8)
+        self.wave.ax.set_xlabel('Time (s)', fontsize=7)
+        self.pitch_plot.ax.plot(result['pitch_time'], result['pitch'], color=NAVY, linewidth=0.8)
+        self.pitch_plot.ax.set_title('F0 / PERIODIC VOICING', fontsize=8)
+        self.pitch_plot.ax.set_ylabel('Frequency (Hz)', fontsize=7)
+        self.spectrogram.ax.pcolormesh(result['spectrogram_time'], result['spectrogram_freq'], result['spectrogram'],
+                                      shading='auto', cmap='magma', vmin=-80, vmax=0)
+        self.spectrogram.ax.set_ylim(0, 5000)
+        self.spectrogram.ax.set_title('STFT / RELATIVE dB', fontsize=8)
+        self.spectrogram.ax.set_xlabel('Time (s)', fontsize=7)
+        for plot in (self.wave, self.pitch_plot, self.spectrogram):
+            plot.draw_idle()
+        self.protocol_panel.set_results(result)
+        self.protocol_panel.show()
+        self.guidance.setText('Recording and acoustic analysis complete. See the reference guidance below.')
+        set_badge(self.badge, 'COMPLETE', GREEN)
+
+    def cleanup(self):
+        self.closing = True
+        self._stop()
+        self.start.setEnabled(False)
+        self.reset.setEnabled(False)
+        return self.worker is None
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("TecnoMedNeuro - Motion and Facial Research Prototype")
+        self.setWindowTitle("TecnoMedNeuro — Исследовательский прототип веб-измерений")
         self.setMinimumSize(1200, 750)
         self.resize(1400, 860)
         self.setStyleSheet(f"QMainWindow {{ background: {BG}; }} * {{ border-radius: 0px; }}")
@@ -1531,7 +1974,7 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        tabs = ["DASHBOARD", "TREMOR", "FACIAL", "rPPG", "AAC", "VOICE"]
+        tabs = ["ОБЗОР", "ТРЕМОР", "ЛИЦО", "ПУЛЬС", "КОММУНИКАЦИЯ", "ГОЛОС"]
         self.nav = NavBar(tabs, self.switch_page)
         root.addWidget(self.nav)
 
@@ -1546,19 +1989,22 @@ class MainWindow(QMainWindow):
         self.facial_page = FacialPage(status_bar=self.status_bar)
         self.facial_page.capture_finished.connect(self._finish_close)
         self.stack.addWidget(self.facial_page)
-        self.stack.addWidget(RPPGPage())
+        self.rppg_page = RPPGPage(status_bar=self.status_bar)
+        self.rppg_page.capture_finished.connect(self._finish_close)
+        self.stack.addWidget(self.rppg_page)
         self.stack.addWidget(AACPage())
-        self.stack.addWidget(VoicePage())
+        self.voice_page = VoicePage(status_bar=self.status_bar)
+        self.voice_page.capture_finished.connect(self._finish_close)
+        self.stack.addWidget(self.voice_page)
         root.addWidget(self.stack)
 
         root.addWidget(self.status_bar)
         self.switch_page(0)
 
     def switch_page(self, index):
-        if hasattr(self, 'facial_page'):
-            if self.tremor_page.worker is not None and index == 2:
-                return
-            if self.facial_page.worker is not None and index == 1:
+        if hasattr(self, 'voice_page') and index in (1, 2, 3, 5):
+            pages = {1: self.tremor_page, 2: self.facial_page, 3: self.rppg_page, 5: self.voice_page}
+            if any(page.worker is not None and key != index for key, page in pages.items()):
                 return
         self.stack.setCurrentIndex(index)
         self.nav.set_active(index)
@@ -1566,7 +2012,9 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         tremor_done = self.tremor_page.cleanup()
         face_done = self.facial_page.cleanup()
-        if tremor_done and face_done:
+        rppg_done = self.rppg_page.cleanup()
+        voice_done = self.voice_page.cleanup()
+        if tremor_done and face_done and rppg_done and voice_done:
             event.accept()
         else:
             self._close_pending = True

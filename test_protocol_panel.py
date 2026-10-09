@@ -102,8 +102,8 @@ class ProtocolPanelTests(unittest.TestCase):
             with patch('protocol_panel.QFileDialog.getSaveFileName', return_value=(str(text), '')):
                 self.page.protocol_panel.save_button.click()
             report = text.read_text(encoding='utf-8')
-            self.assertIn('Motion RMS:', report)
-            self.assertIn('DISCLAIMER:', report)
+            self.assertIn('СКЗ движения:', report)
+            self.assertIn('ОГРАНИЧЕНИЕ:', report)
             with patch('protocol_panel.QFileDialog.getSaveFileName', return_value=(str(pdf), '')):
                 self.page.protocol_panel.export_button.click()
             self.assertTrue(pdf.read_bytes().startswith(b'%PDF-'))
