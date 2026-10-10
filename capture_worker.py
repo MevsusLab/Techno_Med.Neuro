@@ -78,7 +78,7 @@ class CaptureWorker(QThread):
         self._lock = threading.Lock()
         self._latest = None
         self._samples = []
-        self._sample_limit = max(1, int(duration * 1000))
+        self._sample_limit = max(1, int(duration * 1000)) if duration is not None else 180
         self._sample_count = 0
         self._record_start = None
         self._record_end = None
@@ -334,6 +334,8 @@ class ProcessCaptureWorker(CaptureWorker):
                         if latest is not None:
                             self._latest = latest
                         self._samples.extend(samples)
+                        if self.duration is None and len(self._samples) > self._sample_limit:
+                            del self._samples[:-self._sample_limit]
                         self._record_start, self._record_end, self._read_wait_since, self._read_timeout = bounds
                     for text in updates:
                         self.status.emit(text)
@@ -353,6 +355,7 @@ class ProcessCaptureWorker(CaptureWorker):
                     timeout = {
                         "process startup": 30, "model setup": 75, "model initialization": 15,
                         "camera opening": 15, "hand inference": 5, "face inference": 5,
+                        "gaze inference": 5,
                         "microphone opening": 15, "microphone read": 3, "voice analysis": 120,
                         "audio file loading": 120,
                         "voice dependencies": 120,

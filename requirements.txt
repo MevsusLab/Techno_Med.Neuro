@@ -7,3 +7,4 @@ matplotlib==3.11.1
 sounddevice==0.5.6
 librosa==1.0.0
 praat-parselmouth==0.4.7
+pyttsx3==2.99

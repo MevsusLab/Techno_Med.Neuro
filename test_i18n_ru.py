@@ -25,6 +25,12 @@ class RussianTextTests(unittest.TestCase):
             self.assertEqual(window.tremor_page.btn_start.text(), 'НАЧАТЬ ЗАПИСЬ')
             self.assertEqual(window.facial_page.start.text(), 'НАЧАТЬ ТЕСТ ЛИЦА')
             self.assertEqual(window.voice_page.start.text(), 'ЗАПИСАТЬ ГОЛОС')
+            self.assertEqual(window.aac_page.btn_tracking.text(), 'НАЧАТЬ ОТСЛЕЖИВАНИЕ ВЗГЛЯДА')
+            self.assertEqual(window.aac_page.btn_calibrate.text(), 'КАЛИБРОВАТЬ ВЗГЛЯД')
+            self.assertEqual(window.aac_page.btn_stop_tracking.text(), 'ОСТАНОВИТЬ ОТСЛЕЖИВАНИЕ')
+            self.assertEqual(window.aac_page.gaze_x.findChildren(QLabel)[0].text(), 'ВЗГЛЯД ПО ГОРИЗОНТАЛИ')
+            self.assertEqual(window.aac_page.gaze_y.findChildren(QLabel)[0].text(), 'ВЗГЛЯД ПО ВЕРТИКАЛИ')
+            self.assertEqual(window.aac_page.dwell_display.findChildren(QLabel)[0].text(), 'УДЕРЖАНИЕ ВЗГЛЯДА')
             self.assertEqual(window.tremor_page.page_badge.text(), 'IDLE')
             self.assertEqual([button.text() for button in window.nav.buttons],
                              ['ОБЗОР', 'ТРЕМОР', 'ЛИЦО', 'ПУЛЬС', 'КОММУНИКАЦИЯ', 'ГОЛОС'])

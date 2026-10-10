@@ -10,9 +10,9 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QStackedWidget, QFrame, QGridLayout,
     QSizePolicy, QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
-    QFileDialog
+    QFileDialog, QPlainTextEdit
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint
 from PyQt6.QtGui import QFont, QColor, QImage, QPixmap
 from tremor_engine import TremorEngine
 from capture_worker import ProcessCaptureWorker as CaptureWorker
@@ -23,6 +23,14 @@ from rppg_capture import RPPGCaptureWorker
 from rppg_engine import RPPGEngine
 from voice_capture import VoiceCaptureWorker, VoiceFileCaptureWorker
 from voice_dependencies import check_voice_dependencies
+from gaze_capture import GazeCaptureWorker
+from gaze_engine import (DwellEngine, DwellState, GazeTargeting, fit_gaze_classifier,
+                         inconsistent_targets, calibration_sample, best_effort_sample,
+                         DWELL_THRESHOLD_MS, COOLDOWN_MS, FEATURE_DIM,
+                         CALIBRATION_SETTLE_SECONDS, CALIBRATION_SAMPLE_SECONDS,
+                         CALIBRATION_MAX_WINDOW_SECONDS, CALIBRATION_GAP_SECONDS,
+                         CALIBRATION_ACCEPT_SECONDS, CALIBRATION_MIN_SAMPLES, HEAD_SWEEP_SECONDS)
+from aac_speech import SpeechWorker
 from i18n_ru import RussianLabel as QLabel, ru
 
 
@@ -406,7 +414,7 @@ class DashboardPage(QWidget):
             ("Version", "0.1.0-alpha"),
             ("Backend", "MediaPipe + SciPy DSP"),
             ("Input", "USB Webcam + Microphone"),
-            ("Modules", "4 prototypes / 1 planned"),
+            ("Modules", "5 prototypes / 0 planned"),
             ("Framework", "PyQt6 / OpenCV"),
         ]):
             kl = QLabel(k)
@@ -437,7 +445,7 @@ class DashboardPage(QWidget):
             ("Hand Motion", "Research", "PROTOTYPE"),
             ("Facial Asymmetry", "Research", "PROTOTYPE"),
             ("rPPG Vitals", "Research", "PROTOTYPE"),
-            ("Eye-Tracking AAC", "Assistive", "PLANNED"),
+            ("Eye-Tracking AAC", "Assistive", "PROTOTYPE"),
             ("Voice Biomarkers", "Research", "PROTOTYPE"),
         ]):
             table.setItem(r, 0, QTableWidgetItem(ru(name)))
@@ -484,7 +492,7 @@ class DashboardPage(QWidget):
         bottom.addWidget(diag_panel)
         assist_panel, assist_lay = panel("Assistive + Monitoring")
         for name, desc in [
-            ("AAC", "Planned: eye-gaze communication board with dwell-time activation"),
+            ("AAC", "Calibrated gaze grid with dwell selection and speech output"),
             ("rPPG", "Skin-region green-channel pulse-rate research prototype"),
         ]:
             row = QHBoxLayout()
@@ -1608,87 +1616,726 @@ class RPPGPage(QWidget):
         return self.worker is None
 
 
+class DwellButton(QPushButton):
+    def __init__(self, text, parent=None, navigation=False):
+        super().__init__(text, parent)
+        self.progress = 0.0
+        self.target = False
+        self.flash_until = 0.0
+        self.flash_timer = QTimer(self)
+        self.flash_timer.setSingleShot(True)
+        self.flash_timer.timeout.connect(self.update)
+        self.navigation = navigation
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFont(QFont('Consolas', 11 if navigation else 15, QFont.Weight.Bold))
+        self.setStyleSheet(f"""
+            QPushButton {{ background: {BG}; color: {NAVY}; border: 1px solid {NAVY_MID};
+                border-radius: 0px; padding: 3px 5px; }}
+            QPushButton:hover {{ background: {BG_ALT}; }}
+        """)
+
+    def set_dwell(self, progress, target=False):
+        self.progress = max(0.0, min(1.0, float(progress)))
+        self.target = bool(target)
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        from PyQt6.QtGui import QColor, QPainter, QPen
+        painter = QPainter(self)
+        flashing = time.perf_counter() < self.flash_until
+        if self.target or flashing:
+            pen = QPen(QColor('#16A34A' if flashing or self.progress >= 1 else '#2563EB'), 2)
+            painter.setPen(pen)
+            painter.drawRect(self.rect().adjusted(2, 2, -3, -3))
+        if self.progress > 0:
+            width = int((self.width() - 2) * self.progress)
+            painter.fillRect(1, self.height() - 6, width, 5, QColor('#2563EB'))
+        painter.end()
+
+    def flash(self):
+        self.flash_until = time.perf_counter() + 0.15
+        self.flash_timer.start(160)
+        self.update()
+
+    def clear_flash(self):
+        self.flash_until = 0.0
+        self.flash_timer.stop()
+        self.update()
+
+
+AAC_WORDS_PER_SHEET = 4
+AAC_GRID_COLUMNS = 2
+AAC_CATEGORIES = [
+    ('ЭКСТРЕННАЯ ПОМОЩЬ / ПОТРЕБНОСТИ', ['ПОМОЩЬ', 'ВОДА', 'БОЛЬ', 'ТУАЛЕТ']),
+    ('ОТВЕТЫ / ПОНИМАНИЕ', ['ДА', 'НЕТ', 'НЕ ПОНИМАЮ', 'ХОРОШО']),
+    ('ПОЛОЖЕНИЕ / ТЕМПЕРАТУРА', ['ПЕРЕВЕРНУТЬ', 'ПОДНЯТЬ ГОЛОВУ', 'ХОЛОДНО', 'ЖАРКО']),
+    ('КОМФОРТ / ОКРУЖЕНИЕ', ['ДУШНО', 'ЧЕШЕТСЯ', 'СВЕТ', 'ОЧКИ']),
+    ('МЕДИЦИНА / БЫТ', ['ВРАЧ', 'ТАБЛЕТКА', 'ЕДА', 'УСТАЛ']),
+    ('ОБЩЕНИЕ / БЛИЗКИЕ', ['СПАСИБО', 'ПОЖАЛУЙСТА', 'СЕМЬЯ', 'ТЕЛЕФОН']),
+]
+
+
 class AACPage(QWidget):
-    def __init__(self):
+    capture_finished = pyqtSignal()
+    dwell_threshold = DWELL_THRESHOLD_MS / 1000
+    cooldown_duration = COOLDOWN_MS / 1000
+
+    def __init__(self, status_bar=None):
         super().__init__()
+        self.status_bar = status_bar
+        self.worker = None
+        self.closing = False
+        self.tracking_stopping = False
+        self.tracking_error = ''
+        # Calibration: CAPTURE pass, head-movement step, reverse CHECK pass and,
+        # if a button's windows disagree, one REFINE pass for those buttons.
+        self.calibration_model = None
+        self.calibration_active = False
+        self.calibration_stage = 'capture'
+        self.calibration_queue = []
+        self.calibration_stage_total = 0
+        self.calibration_windows = []
+        self.calibration_head_motion = None
+        self.calibration_refined = False
+        self.calibration_started = None
+        self.calibration_last_timestamp = None
+        self.calibration_pending = []
+        self.calibration_pending_times = []
+        self.calibration_next_check = 0.0
+        self.calibration_hint = ''
+        self.calibration_warning = ''
+        self.frames_seen = False
+        self.last_sample_arrival = None
+        self.last_gaze_timestamp = None
+        self.latest_gaze = None
+        self.latest_features = None
+        self.current_target = None
+        self.dwell_started = None
+        self.cooldown_until = 0.0
+        self.category_index = 0
+        self.dwell_engine = DwellEngine()
+        self.speech = SpeechWorker()
+        self.speech_error = ''
+        self.timer = QTimer(self)
+        self.timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self.timer.timeout.connect(self._poll)
+        self.speech_timer = QTimer(self)
+        self.speech_timer.timeout.connect(self._poll_speech)
+
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(12, 6, 12, 6)
+        layout.setSpacing(5)
         header = QHBoxLayout()
-        title = QLabel("EYE-TRACKING AAC INTERFACE")
+        title = QLabel('AAC / КОММУНИКАЦИЯ С ПОМОЩЬЮ ВЗГЛЯДА')
         title.setFont(f_sans(13, True))
-        title.setStyleSheet(f"color: {TEXT};")
+        title.setStyleSheet(f'color: {TEXT};')
         header.addWidget(title)
         header.addStretch()
-        header.addWidget(make_status_badge("PLANNED", TEXT_MUTED))
+        self.badge = make_status_badge('IDLE', TEXT_MUTED)
+        header.addWidget(self.badge)
         layout.addLayout(header)
-        sub = QLabel("Interface preview only  |  Gaze tracking and communication are not implemented")
-        sub.setFont(f_mono(8))
-        sub.setStyleSheet(f"color: {TEXT_MUTED};")
-        layout.addWidget(sub)
+        self.guidance = QLabel('Калибровка нужна для привязки взгляда к экрану. Сидите неподвижно и следуйте подсказкам.')
+        self.guidance.setFont(f_mono(8))
+        self.guidance.setWordWrap(True)
+        self.guidance.setStyleSheet(f'color: {TEXT_DIM};')
+        layout.addWidget(self.guidance)
+
         top = QHBoxLayout()
-        top.setSpacing(8)
-        tracking_panel, tracking_lay = panel("Eye Tracking Feed")
-        tracking_feed = QFrame()
-        tracking_feed.setMinimumSize(280, 180)
-        tracking_feed.setStyleSheet(f"background: {NAVY}; border: 1px solid {BORDER};")
-        tf_lay = QVBoxLayout(tracking_feed)
-        tf_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        tf_lbl = QLabel("IRIS TRACKING FEED")
-        tf_lbl.setFont(f_mono(9))
-        tf_lbl.setStyleSheet("color: #475569; border: none;")
-        tf_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        tf_lay.addWidget(tf_lbl)
-        tracking_lay.addWidget(tracking_feed)
-        gaze_row = QHBoxLayout()
-        gaze_row.addWidget(metric_readout("Gaze X", "---"))
-        gaze_row.addWidget(metric_readout("Gaze Y", "---"))
-        gaze_row.addWidget(metric_readout("Dwell", "---", "ms"))
-        tracking_lay.addLayout(gaze_row)
+        top.setSpacing(6)
+        tracking_panel, tracking_layout = panel('Калибровка взгляда и камера')
+        self.tracking_video = VideoLabel('ПОСМОТРИТЕ В КАМЕРУ')
+        self.tracking_video.setMinimumSize(240, 110)
+        self.tracking_video.setStyleSheet(f'background: {NAVY}; color: #94A3B8; border: 1px solid {BORDER};')
+        self.tracking_video.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tracking_layout.addWidget(self.tracking_video, 1)
+        metrics = QHBoxLayout()
+        self.gaze_x = MetricDisplay('Gaze X', '---')
+        self.gaze_y = MetricDisplay('Gaze Y', '---')
+        self.dwell_display = MetricDisplay('DWELL', '0', 'мс')
+        for metric in (self.gaze_x, self.gaze_y, self.dwell_display):
+            metrics.addWidget(metric)
+        tracking_layout.addLayout(metrics)
+        track_buttons = QHBoxLayout()
+        self.btn_tracking = cmd_button('START GAZE TRACKING')
+        self.btn_calibrate = cmd_button('CALIBRATE GAZE', primary=False)
+        self.btn_stop_tracking = cmd_button('STOP TRACKING', primary=False)
+        self.btn_calibrate.setEnabled(False)
+        self.btn_stop_tracking.setEnabled(False)
+        self.btn_tracking.clicked.connect(self._start_tracking)
+        self.btn_calibrate.clicked.connect(self._begin_calibration)
+        self.btn_stop_tracking.clicked.connect(self._stop_tracking)
+        for button in (self.btn_tracking, self.btn_calibrate, self.btn_stop_tracking):
+            button.setFont(f_mono(8, True))
+            button.setFixedHeight(27)
+            track_buttons.addWidget(button)
+        tracking_layout.addLayout(track_buttons)
         top.addWidget(tracking_panel, 2)
-        output_panel, output_lay = panel("Output Buffer")
-        selected = QLabel("---")
-        selected.setFont(f_mono(20, True))
-        selected.setStyleSheet(f"color: {NAVY}; border: none;")
-        selected.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        output_lay.addWidget(selected)
-        output_lay.addStretch()
-        btn_row = QHBoxLayout()
-        btn_row.addWidget(planned_button("SPEAK"))
-        btn_row.addWidget(planned_button("CLEAR", primary=False))
-        output_lay.addLayout(btn_row)
+
+        output_panel, output_layout = panel('Вывод сообщения')
+        self.output = QPlainTextEdit()
+        self.output.setReadOnly(True)
+        self.output.setMaximumHeight(88)
+        self.output.setPlaceholderText('Выбранные слова появятся здесь')
+        self.output.setFont(f_mono(13, True))
+        self.output.setStyleSheet(f'background: {BG_ALT}; color: {NAVY}; border: 1px solid {BORDER};')
+        output_layout.addWidget(self.output, 1)
+        output_buttons = QHBoxLayout()
+        self.btn_speak = cmd_button('SPEAK')
+        self.btn_clear = cmd_button('CLEAR', primary=False)
+        self.btn_speak.clicked.connect(self._speak_output)
+        self.btn_clear.clicked.connect(lambda: self.output.clear())
+        output_buttons.addWidget(self.btn_speak)
+        output_buttons.addWidget(self.btn_clear)
+        output_layout.addLayout(output_buttons)
         top.addWidget(output_panel, 1)
-        layout.addLayout(top)
-        grid_panel, grid_lay = panel("Communication Grid")
-        grid = QGridLayout()
-        grid.setSpacing(4)
-        for text, r, c in [
-            ("WATER", 0, 0), ("DOCTOR", 0, 1), ("PAIN", 0, 2),
-            ("YES", 1, 0), ("NO", 1, 1), ("HELP", 1, 2),
-        ]:
-            btn = QPushButton(text)
-            btn.setFont(f_sans(12, True))
-            btn.setFixedHeight(80)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setEnabled(False)
-            btn.setStyleSheet(f"""
-                QPushButton {{ background: {BG_ALT}; color: {NAVY}; border: 1px solid {BORDER}; padding: 0 8px; }}
-                QPushButton:hover {{ background: {NAVY}; color: #FFFFFF; }}
-            """)
-            grid.addWidget(btn, r, c)
-        grid_lay.addLayout(grid)
-        nav_row = QHBoxLayout()
-        nav_row.addWidget(planned_button("< PREV CATEGORY", primary=False))
-        nav_row.addStretch()
-        cat_label = QLabel("CATEGORY 1 / 3: BASIC NEEDS")
-        cat_label.setFont(f_mono(9, True))
-        cat_label.setStyleSheet(f"color: {TEXT_DIM}; border: none;")
-        nav_row.addWidget(cat_label)
-        nav_row.addStretch()
-        nav_row.addWidget(planned_button("NEXT CATEGORY >", primary=False))
-        grid_lay.addLayout(nav_row)
-        layout.addWidget(grid_panel)
-        layout.addStretch()
+        layout.addLayout(top, 1)
+
+        self.grid_panel, grid_layout = panel('Сетка фраз')
+        self.category_label = QLabel('')
+        self.category_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.category_label.setFont(f_mono(10, True))
+        self.category_label.setStyleSheet(f'color: {NAVY}; border: none;')
+        navigation = QHBoxLayout()
+        navigation.setSpacing(6)
+        self.previous_button = DwellButton('< ПРЕДЫДУЩАЯ КАТЕГОРИЯ', navigation=True)
+        self.previous_button.setMinimumHeight(58)
+        self.previous_button.clicked.connect(lambda: self._change_category(-1))
+        navigation.addWidget(self.previous_button, 1)
+        navigation.addWidget(self.category_label, 1)
+        self.next_button = DwellButton('СЛЕДУЮЩАЯ КАТЕГОРИЯ >', navigation=True)
+        self.next_button.setMinimumHeight(58)
+        self.next_button.clicked.connect(lambda: self._change_category(1))
+        navigation.addWidget(self.next_button, 1)
+        grid_layout.addLayout(navigation)
+        self.matrix = QWidget()
+        matrix_layout = QGridLayout(self.matrix)
+        matrix_layout.setContentsMargins(0, 0, 0, 0)
+        matrix_layout.setSpacing(6)
+        self.card_buttons = []
+        for index in range(AAC_WORDS_PER_SHEET):
+            button = DwellButton('')
+            button.setMinimumHeight(100)
+            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            button.clicked.connect(lambda checked=False, i=index: self._select_word(i))
+            self.card_buttons.append(button)
+            matrix_layout.addWidget(button, index // AAC_GRID_COLUMNS, index % AAC_GRID_COLUMNS)
+        for column in range(AAC_GRID_COLUMNS):
+            matrix_layout.setColumnStretch(column, 1)
+        matrix_layout.setRowStretch(0, 1)
+        matrix_layout.setRowStretch(1, 1)
+        grid_layout.addWidget(self.matrix, 1)
+        self._set_category(0)
+        layout.addWidget(self.grid_panel, 2)
+
+    # ------------------------------------------------------------------ session
+
+    def _start_tracking(self):
+        if self.worker is not None or self.closing:
+            return
+        self.tracking_stopping = False
+        self.tracking_error = ''
+        self.calibration_model = None
+        self.frames_seen = False
+        self.last_sample_arrival = None
+        self.last_gaze_timestamp = None
+        self._clear_gaze()
+        self.dwell_engine.reset()
+        self._reset_dwell()
+        self.worker = GazeCaptureWorker(self)
+        self.worker.finished.connect(self._tracking_finished)
+        self.worker.failed.connect(self._capture_failed)
+        self.btn_tracking.setEnabled(False)
+        self.btn_stop_tracking.setEnabled(True)
+        self._begin_calibration_state()
+        self.guidance.setText('Запуск камеры и модели взгляда… Затем смотрите в центр подсвеченной кнопки.')
+        if self.status_bar:
+            self.status_bar.update_badge('CAM', 'STARTING', AMBER)
+            self.status_bar.update_badge('MEDIAPIPE', 'STARTING', AMBER)
+        self.timer.start(16)
+        self.worker.start()
+
+    def _begin_calibration(self):
+        if self.closing or self.tracking_stopping or self.calibration_active:
+            return
+        if self.worker is None:
+            self._start_tracking()
+            return
+        self._begin_calibration_state()
+
+    # -------------------------------------------------------------- calibration
+
+    def _calibration_buttons(self):
+        return [self.previous_button, self.next_button, *self.card_buttons]
+
+    def _target_centers(self):
+        centers = [button.mapTo(self, button.rect().center()) for button in self._calibration_buttons()]
+        return np.array([[point.x() / max(self.width(), 1), point.y() / max(self.height(), 1)]
+                         for point in centers])
+
+    def _target_rectangles(self):
+        rectangles = {}
+        for button in self._calibration_buttons():
+            if button.isVisible() and button.isEnabled():
+                origin = button.mapTo(self, QPoint(0, 0))
+                rect = button.rect().translated(origin)
+                rectangles[button] = (rect.left(), rect.top(), rect.right(), rect.bottom())
+        return rectangles
+
+    def _begin_calibration_state(self):
+        count = len(self._calibration_buttons())
+        self.calibration_active = True
+        self.calibration_windows = [[] for _ in range(count)]
+        self.calibration_head_motion = None
+        self.calibration_refined = False
+        self.calibration_hint = ''
+        self.calibration_warning = ''
+        self.calibration_last_timestamp = None
+        self.dwell_engine.reset()
+        self._reset_dwell()
+        self.btn_calibrate.setEnabled(False)
+        set_badge(self.badge, 'CALIBRATING', AMBER)
+        self._start_calibration_stage('capture', list(range(count)))
+
+    def _start_calibration_stage(self, stage, queue):
+        self.calibration_stage = stage
+        self.calibration_queue = list(queue)
+        self.calibration_stage_total = len(self.calibration_queue)
+        self._restart_calibration_window()
+        self._highlight_calibration_target(0.0)
+        self._show_calibration_prompt()
+
+    def _restart_calibration_window(self):
+        self.calibration_started = None
+        self.calibration_pending = []
+        self.calibration_pending_times = []
+        self.calibration_next_check = 0.0
+
+    def _calibration_target_button(self):
+        return self._calibration_buttons()[self.calibration_queue[0]]
+
+    def _highlight_calibration_target(self, progress):
+        if not self.calibration_active or not self.calibration_queue:
+            return
+        target = self._calibration_target_button()
+        for button in self._calibration_buttons():
+            if button is target:
+                button.set_dwell(progress, True)
+            elif button.target or button.progress:
+                button.set_dwell(0, False)
+
+    def _show_calibration_prompt(self, status=''):
+        if not self.calibration_active or not self.calibration_queue:
+            return
+        text = self._calibration_target_button().text()
+        if self.calibration_stage == 'head':
+            prompt = (f'ДВИЖЕНИЕ ГОЛОВЫ: продолжайте смотреть на «{text}» и медленно поворачивайте '
+                      'голову влево-вправо, затем вверх-вниз.')
+        else:
+            name = {'capture': 'КАЛИБРОВКА', 'check': 'ПРОВЕРКА', 'refine': 'УТОЧНЕНИЕ'}[self.calibration_stage]
+            step = self.calibration_stage_total - len(self.calibration_queue) + 1
+            prompt = f'{name} {step}/{self.calibration_stage_total}: смотрите в центр «{text}».'
+        if not self.frames_seen:
+            status = status or 'Запуск камеры…'
+        extra = status or self.calibration_hint
+        if extra:
+            prompt += ' ' + extra
+        if self.guidance.text() != prompt:
+            self.guidance.setText(prompt)
+
+    def _collect_calibration(self, features, timestamp):
+        if not self.calibration_active or not self.calibration_queue or features is None:
+            return
+        value = np.asarray(features, dtype=float)
+        if value.shape != (FEATURE_DIM,) or not np.isfinite(value).all():
+            return
+        if self.calibration_last_timestamp is not None:
+            if timestamp <= self.calibration_last_timestamp:
+                return
+            if timestamp - self.calibration_last_timestamp > CALIBRATION_GAP_SECONDS:
+                self._restart_calibration_window()
+        self.calibration_last_timestamp = timestamp
+        if self.calibration_started is None:
+            self.calibration_started = timestamp
+        elapsed = timestamp - self.calibration_started
+        head_step = self.calibration_stage == 'head'
+        collect = HEAD_SWEEP_SECONDS if head_step else CALIBRATION_SAMPLE_SECONDS
+        duration = CALIBRATION_SETTLE_SECONDS + collect
+        if elapsed + 1e-7 >= CALIBRATION_SETTLE_SECONDS:
+            self.calibration_pending.append(value)
+            self.calibration_pending_times.append(timestamp)
+            limit = HEAD_SWEEP_SECONDS if head_step else CALIBRATION_MAX_WINDOW_SECONDS
+            while timestamp - self.calibration_pending_times[0] > limit:
+                self.calibration_pending_times.pop(0)
+                self.calibration_pending.pop(0)
+        self._highlight_calibration_target(min(elapsed / duration, 1.0))
+        self.dwell_display.set_value(str(int(min(elapsed, duration) * 1000)))
+        if elapsed + 1e-7 < duration or timestamp + 1e-7 < self.calibration_next_check:
+            self._show_calibration_prompt()
+            return
+        self.calibration_next_check = timestamp + 0.25
+        window = np.array(self.calibration_pending)
+        if head_step:
+            if len(window) >= CALIBRATION_MIN_SAMPLES:
+                self._accept_calibration_window(window)
+            return
+        span = self.calibration_pending_times[-1] - self.calibration_pending_times[0] if len(window) > 1 else 0.0
+        try:
+            if span + 1e-7 < 0.75 * CALIBRATION_SAMPLE_SECONDS:
+                raise ValueError('Недостаточно кадров: продолжайте смотреть на кнопку.')
+            _, samples = calibration_sample(window)
+        except ValueError as exc:
+            if elapsed < CALIBRATION_ACCEPT_SECONDS or len(window) < CALIBRATION_MIN_SAMPLES:
+                self.calibration_hint = str(exc)
+                self._show_calibration_prompt()
+                return
+            # Long, restless fixation: keep the settled end of it and move on.
+            samples = best_effort_sample(window, self.calibration_pending_times)
+        self._accept_calibration_window(samples)
+
+    def _accept_calibration_window(self, samples):
+        index = self.calibration_queue.pop(0)
+        if self.calibration_stage == 'head':
+            self.calibration_head_motion = np.array(samples, dtype=float)
+        else:
+            self.calibration_windows[index].append(np.array(samples, dtype=float))
+        self.calibration_hint = ''
+        self._restart_calibration_window()
+        if self.calibration_queue:
+            self._highlight_calibration_target(0.0)
+            self._show_calibration_prompt()
+            return
+        self._finish_calibration_stage()
+
+    def _finish_calibration_stage(self):
+        count = len(self._calibration_buttons())
+        if self.calibration_stage == 'capture':
+            # Use the card closest to the viewport centre; no centre-column
+            # card is required. Target identities stay the same on every sheet.
+            centers = self._target_centers()
+            card_indices = range(2, count)
+            target = min(card_indices, key=lambda index: np.linalg.norm(centers[index] - [0.5, 0.5]))
+            self._start_calibration_stage('head', [target])
+            return
+        if self.calibration_stage == 'head':
+            self._start_calibration_stage('check', list(reversed(range(count))))
+            return
+        try:
+            model = fit_gaze_classifier(self.calibration_windows, self.calibration_head_motion)
+        except (ValueError, np.linalg.LinAlgError) as exc:
+            self.calibration_hint = str(exc)
+            self._start_calibration_stage('refine', list(range(count)))
+            return
+        if not self.calibration_refined:
+            unresolved = inconsistent_targets(model, self.calibration_windows)
+            if unresolved:
+                self.calibration_refined = True
+                self.calibration_hint = 'Ещё раз для точности; остальные кнопки сохранены.'
+                self._start_calibration_stage('refine', unresolved)
+                return
+        self._complete_calibration(model)
+
+    def _complete_calibration(self, model):
+        self.calibration_model = GazeTargeting(model)
+        self.calibration_active = False
+        self.calibration_queue = []
+        self.calibration_hint = ''
+        self._restart_calibration_window()
+        self.dwell_engine.reset()
+        self._reset_dwell()
+        self._refresh_calibration_warning()
+        self.guidance.setText(('Калибровка готова. Удерживайте взгляд на слове или стрелке до '
+                               'заполнения шкалы. ' + self.calibration_warning).strip())
+        set_badge(self.badge, 'ACTIVE', GREEN)
+        self.btn_calibrate.setEnabled(True)
+        self.dwell_display.set_value('0')
+
+    def _refresh_calibration_warning(self):
+        buttons = self._calibration_buttons()
+        weak = self.calibration_model.weak_pairs() if self.calibration_model is not None else []
+        if weak:
+            pairs = ', '.join(f'«{buttons[i].text()}» и «{buttons[j].text()}»' for i, j in weak[:3])
+            self.calibration_warning = (f'Похожий взгляд у кнопок {pairs}: смотрите на них точнее '
+                                        'или слегка поворачивайте голову к кнопке.')
+        else:
+            self.calibration_warning = ''
+
+    # ------------------------------------------------------------------ samples
+
+    def _poll(self):
+        if self.worker is None or self.tracking_stopping:
+            return
+        try:
+            latest, samples = self.worker.take_pending()
+            now = time.perf_counter()
+            if latest is not None:
+                frame = latest['image']
+                h, w = frame.shape[:2]
+                self.tracking_video.setPixmap(QPixmap.fromImage(QImage(
+                    frame.data, w, h, frame.strides[0], QImage.Format.Format_RGB888)))
+                if not self.frames_seen:
+                    self.frames_seen = True
+                    if self.status_bar:
+                        self.status_bar.update_badge('CAM', 'ACTIVE', GREEN)
+                        self.status_bar.update_badge('MEDIAPIPE', 'LOADED', GREEN)
+                if not samples:
+                    samples = [latest]
+            if samples:
+                self.last_sample_arrival = now
+            for sample in samples:
+                self._process_sample(sample)
+            # Child and GUI clocks are never compared; a stall is judged by
+            # arrival time so no stale gaze can complete a dwell.
+            if self.last_sample_arrival is not None and now - self.last_sample_arrival > 0.5:
+                self.last_sample_arrival = None
+                self._lose_gaze()
+        except Exception as exc:
+            traceback.print_exc()
+            self._capture_failed(f'Ошибка обработки взгляда: {exc}')
+
+    def _process_sample(self, sample):
+        timestamp = sample['timestamp']
+        if self.last_gaze_timestamp is not None and timestamp <= self.last_gaze_timestamp:
+            return
+        self.last_gaze_timestamp = timestamp
+        gaze, features = sample.get('gaze'), sample.get('features')
+        if gaze is None or features is None:
+            self._clear_gaze()
+            if self.calibration_active:
+                self._show_calibration_prompt(sample.get('message', ''))
+            else:
+                self._update_selection(None, timestamp)
+                self._show_gaze_guidance(sample.get('message', ''))
+            return
+        self.latest_gaze, self.latest_features = gaze, features
+        self.gaze_x.set_value(f'{gaze[0]:.3f}')
+        self.gaze_y.set_value(f'{gaze[1]:.3f}')
+        if self.calibration_active:
+            raw = sample.get('raw_features')
+            self._collect_calibration(features if raw is None else raw, timestamp)
+        else:
+            self._update_selection(features, timestamp)
+            self._show_gaze_guidance(sample.get('message', ''))
+
+    def _show_gaze_guidance(self, message):
+        if self.calibration_model is None:
+            message = 'Нажмите «КАЛИБРОВАТЬ ВЗГЛЯД», чтобы выбирать кнопки взглядом.'
+        text = ' '.join(part for part in (message, self.calibration_warning, self.speech_error) if part)
+        if self.guidance.text() != text:
+            self.guidance.setText(text)
+
+    def _clear_gaze(self):
+        self.latest_gaze = None
+        self.latest_features = None
+        self.gaze_x.set_value('---')
+        self.gaze_y.set_value('---')
+
+    def _lose_gaze(self):
+        self._clear_gaze()
+        self._reset_dwell()
+
+    # --------------------------------------------------------------- selection
+
+    def _update_selection(self, features, timestamp):
+        if self.calibration_active or self.calibration_model is None:
+            self._reset_dwell()
+            return
+        buttons = self._calibration_buttons()
+        rectangles = self._target_rectangles()
+        current = buttons.index(self.dwell_engine.target) if self.dwell_engine.target in buttons else None
+        index = None if features is None else self.calibration_model.classify(features, current)
+        point = None
+        if index is not None and buttons[index] in rectangles:
+            # A classified gaze targets the centre of its existing button, so
+            # the 12 px entry inset and border retention are always satisfied.
+            point = self._target_centers()[index] * [self.width(), self.height()]
+        update = self.dwell_engine.update(point, rectangles, timestamp, missing=features is None)
+        self.current_target = self.dwell_engine.target
+        self.dwell_started = self.dwell_engine.started
+        self.cooldown_until = self.dwell_engine.cooldown_until
+        for button in buttons:
+            active = button is update.target and update.triggered is None
+            button.set_dwell(update.progress if active else 0, active)
+        self.dwell_display.set_value(str(update.elapsed_ms if update.state == DwellState.DWELLING else 0))
+        if update.triggered is not None:
+            self._activate_target(update.triggered)
+            update.triggered.flash()
+
+    def _reset_dwell(self):
+        if hasattr(self, 'dwell_engine'):
+            self.dwell_engine.cancel_fixation()
+        self.current_target = None
+        self.dwell_started = None
+        if hasattr(self, 'dwell_display'):
+            self.dwell_display.set_value('0')
+        if hasattr(self, 'card_buttons'):
+            for button in [self.previous_button, self.next_button, *self.card_buttons]:
+                button.set_dwell(0, False)
+
+    def _activate_target(self, button):
+        if button is self.previous_button:
+            self._change_category(-1)
+        elif button is self.next_button:
+            self._change_category(1)
+        else:
+            self._select_word(self.card_buttons.index(button))
+
+    def _change_category(self, delta):
+        self._set_category((self.category_index + delta) % len(AAC_CATEGORIES))
+        if self.calibration_active:
+            self._restart_calibration_window()
+            self._highlight_calibration_target(0.0)
+            self._show_calibration_prompt()
+        else:
+            # Manual navigation and gaze arrows both lock out selection after
+            # relabeling. Use the sample clock, just like DwellEngine, and never
+            # shorten the cooldown already started by a gaze-triggered arrow.
+            timestamp = self.dwell_engine.last_timestamp
+            if timestamp is not None:
+                self.dwell_engine.cooldown_until = max(
+                    self.dwell_engine.cooldown_until, timestamp + self.cooldown_duration)
+                self.dwell_engine.state = DwellState.COOLDOWN
+                self.cooldown_until = self.dwell_engine.cooldown_until
+
+    def _set_category(self, index):
+        self._reset_dwell()
+        self.category_index = index % len(AAC_CATEGORIES)
+        category, words = AAC_CATEGORIES[self.category_index]
+        self.category_label.setText(f'КАТЕГОРИЯ [{self.category_index + 1} / {len(AAC_CATEGORIES)}]: {category}')
+        for button, word in zip(self.card_buttons, words):
+            button.setText(word)
+        for button in self._calibration_buttons():
+            button.clear_flash()
+        self._refresh_calibration_warning()
+
+    def _select_word(self, index):
+        word = AAC_CATEGORIES[self.category_index][1][index]
+        current = self.output.toPlainText()
+        self.output.setPlainText(current + word + ' ')
+        cursor = self.output.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self.output.setTextCursor(cursor)
+        self._speak(word)
+        self._reset_dwell()
+        if self.calibration_active:
+            self._highlight_calibration_target(0.0)
+
+    def _speak_output(self):
+        text = self.output.toPlainText().strip()
+        if text:
+            self._speak(text)
+
+    def _speak(self, text):
+        if not self.closing:
+            self.speech_error = ''
+            self.speech.speak(text)
+            self.speech_timer.start(50)
+
+    def _poll_speech(self):
+        errors = self.speech.take_errors()
+        if errors:
+            self.speech_error = errors[-1]
+            self.guidance.setText(self.speech_error)
+
+    # ---------------------------------------------------------------- shutdown
+
+    def _capture_failed(self, message):
+        self.tracking_error = message
+        self.tracking_stopping = True
+        self.calibration_model = None
+        self.calibration_active = False
+        self.calibration_queue = []
+        self._reset_dwell()
+        self.guidance.setText(message)
+        set_badge(self.badge, 'TRACKING ERROR', RED)
+        if self.status_bar:
+            self.status_bar.update_badge('CAM', 'ERROR', RED)
+            self.status_bar.update_badge('MEDIAPIPE', 'ERROR', RED)
+        self.btn_calibrate.setEnabled(False)
+        self.btn_stop_tracking.setEnabled(False)
+        if self.worker is not None:
+            self.worker.requestInterruption()
+        self.timer.stop()
+
+    def cleanup(self):
+        self.closing = True
+        self._stop_tracking()
+        self.speech.close()
+        self.speech_timer.stop()
+        self.btn_tracking.setEnabled(False)
+        self.btn_calibrate.setEnabled(False)
+        self.btn_stop_tracking.setEnabled(False)
+        return self.worker is None
+
+    def _reset_session(self):
+        self.calibration_model = None
+        self.calibration_active = False
+        self.calibration_queue = []
+        self.calibration_warning = ''
+        self._restart_calibration_window()
+        self.last_gaze_timestamp = None
+        self.last_sample_arrival = None
+        self.dwell_engine.reset()
+        self.cooldown_until = 0.0
+        self._reset_dwell()
+        self._clear_gaze()
+        for button in self._calibration_buttons():
+            button.clear_flash()
+
+    def _stop_tracking(self):
+        self.tracking_stopping = True
+        self._reset_session()
+        self.timer.stop()
+        self.speech.cancel()
+        self.btn_calibrate.setEnabled(False)
+        self.btn_stop_tracking.setEnabled(False)
+        self.tracking_video.setText('ПОСМОТРИТЕ В КАМЕРУ')
+        if self.worker is not None:
+            self.worker.requestInterruption()
+            set_badge(self.badge, 'STOPPING', AMBER)
+            if self.status_bar:
+                self.status_bar.update_badge('CAM', 'STOPPING', AMBER)
+        else:
+            self.btn_tracking.setEnabled(not self.closing)
+            set_badge(self.badge, 'IDLE', TEXT_MUTED)
+
+    def _tracking_finished(self):
+        worker = self.worker
+        if worker is None:
+            return
+        try:
+            self.timer.stop()
+            self.worker = None
+            worker.deleteLater()
+            self._reset_session()
+            self.tracking_stopping = False
+            self.btn_tracking.setEnabled(not self.closing)
+            self.btn_calibrate.setEnabled(False)
+            self.btn_stop_tracking.setEnabled(False)
+            if self.status_bar:
+                self.status_bar.update_badge('CAM', 'DISCONNECTED', TEXT_MUTED)
+                self.status_bar.update_badge('MEDIAPIPE', 'NOT LOADED', TEXT_MUTED)
+            error = self.tracking_error or worker.error
+            if error:
+                self.guidance.setText(error)
+                set_badge(self.badge, 'TRACKING ERROR', RED)
+            elif worker.reason == 'stopped':
+                self.guidance.setText('Отслеживание остановлено. Нажмите кнопку запуска для выбора слов взглядом.')
+                set_badge(self.badge, 'IDLE', TEXT_MUTED)
+            else:
+                set_badge(self.badge, 'TRACKING ENDED', AMBER)
+        finally:
+            self.capture_finished.emit()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'dwell_engine'):
+            self._reset_dwell()
+        # Calibration data is stored per button, not per pixel position, so a
+        # layout change only restarts the window currently being measured.
+        if getattr(self, 'calibration_active', False):
+            self._restart_calibration_window()
+            self._highlight_calibration_target(0.0)
 
 
 class VoicePage(QWidget):
@@ -1992,7 +2639,9 @@ class MainWindow(QMainWindow):
         self.rppg_page = RPPGPage(status_bar=self.status_bar)
         self.rppg_page.capture_finished.connect(self._finish_close)
         self.stack.addWidget(self.rppg_page)
-        self.stack.addWidget(AACPage())
+        self.aac_page = AACPage(status_bar=self.status_bar)
+        self.aac_page.capture_finished.connect(self._finish_close)
+        self.stack.addWidget(self.aac_page)
         self.voice_page = VoicePage(status_bar=self.status_bar)
         self.voice_page.capture_finished.connect(self._finish_close)
         self.stack.addWidget(self.voice_page)
@@ -2002,8 +2651,9 @@ class MainWindow(QMainWindow):
         self.switch_page(0)
 
     def switch_page(self, index):
-        if hasattr(self, 'voice_page') and index in (1, 2, 3, 5):
-            pages = {1: self.tremor_page, 2: self.facial_page, 3: self.rppg_page, 5: self.voice_page}
+        if hasattr(self, 'voice_page') and index in (1, 2, 3, 4, 5):
+            pages = {1: self.tremor_page, 2: self.facial_page, 3: self.rppg_page,
+                     4: self.aac_page, 5: self.voice_page}
             if any(page.worker is not None and key != index for key, page in pages.items()):
                 return
         self.stack.setCurrentIndex(index)
@@ -2014,7 +2664,8 @@ class MainWindow(QMainWindow):
         face_done = self.facial_page.cleanup()
         rppg_done = self.rppg_page.cleanup()
         voice_done = self.voice_page.cleanup()
-        if tremor_done and face_done and rppg_done and voice_done:
+        aac_done = self.aac_page.cleanup()
+        if tremor_done and face_done and rppg_done and voice_done and aac_done:
             event.accept()
         else:
             self._close_pending = True

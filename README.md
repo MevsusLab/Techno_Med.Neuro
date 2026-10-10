@@ -1,6 +1,6 @@
 # TecnoMedNeuro
 
-Desktop research prototype for hand-motion, facial-symmetry, green-channel rPPG pulse-rate, and acoustic voice measurement. AAC remains an interface mockup. This software is not a diagnostic device and cannot identify Parkinson's disease, essential tremor, stroke, facial nerve palsy, dysarthria, or the absence of disease.
+Desktop research prototype for hand-motion, facial-symmetry, green-channel rPPG pulse-rate, acoustic voice measurement, and eye-gaze AAC communication. This software is not a diagnostic device and cannot identify Parkinson's disease, essential tremor, stroke, facial nerve palsy, dysarthria, or the absence of disease.
 
 ## Run
 
@@ -56,6 +56,40 @@ This is an unvalidated research estimate. ROI agreement cannot guarantee that sh
 After a completed estimate, including a drift-caution estimate, the left viewport splits approximately 50/50 between video and a scrollable Vitals Screening protocol panel. Reset, new capture, or `[X]` restores full-height video; rejected/cancelled sessions keep the panel hidden. Text/PDF exports include the estimate, capture-quality values, used ROIs, all-region spread, cautions, and disclaimer. The panel uses stricter exploratory interpretation rules (<70% coverage, <60% spectral concentration, or >5 BPM all-ROI spread) before rate bands below 60, 60-95, or above 95 BPM. These do not diagnose bradycardia/tachycardia or establish normal circulation. All-region spread can include an ROI excluded by the engine; a withheld protocol interpretation is distinct from engine acceptance of a candidate estimate.
 
 Run all tests with `python -m unittest discover -p "test_*.py"`. Tests cover synthetic signal cases, module state/layout, report exports, localization, cancellation, and process recovery. The project's `.venv` was identified as the environment missing librosa/Parselmouth; its pinned dependencies have now been installed and the full suite has been run there.
+
+## Eye-Gaze AAC Communication
+
+Open **КОММУНИКАЦИЯ** and press **НАЧАТЬ ОТСЛЕЖИВАНИЕ ВЗГЛЯДА**. Four large phrase cards in a 2×2 grid and two category arrows are gaze targets. All 24 words are retained across six sheets, wrapping in both directions:
+
+| Sheet | Words |
+|---|---|
+| Экстренная помощь / потребности | ПОМОЩЬ, ВОДА, БОЛЬ, ТУАЛЕТ |
+| Ответы / понимание | ДА, НЕТ, НЕ ПОНИМАЮ, ХОРОШО |
+| Положение / температура | ПЕРЕВЕРНУТЬ, ПОДНЯТЬ ГОЛОВУ, ХОЛОДНО, ЖАРКО |
+| Комфорт / окружение | ДУШНО, ЧЕШЕТСЯ, СВЕТ, ОЧКИ |
+| Медицина / быт | ВРАЧ, ТАБЛЕТКА, ЕДА, УСТАЛ |
+| Общение / близкие | СПАСИБО, ПОЖАЛУЙСТА, СЕМЬЯ, ТЕЛЕФОН |
+
+Selection appends the word and a space to the message buffer and speaks it; **ПРОИЗНЕСТИ** reads the whole message and **ОЧИСТИТЬ** clears it. Calibration belongs to the four card positions and two arrow positions, so it is reused across all sheets. Changing a sheet clears partial dwell progress and starts a 500 ms selection cooldown, including manual arrow clicks. **ОСТАНОВИТЬ ОТСЛЕЖИВАНИЕ** cancels fixation and speech, releases the camera, and allows restart once the capture process has been reaped.
+
+Iris centers 468/473 are normalized against the eye corners and lids for the existing telemetry (ВЗГЛЯД ПО ГОРИЗОНТАЛИ / ВЕРТИКАЛИ, EMA alpha 0.25); the inner-to-outer axis of one eye is reflected so binocular averaging cannot cancel horizontal motion. Targeting uses a separate four-component feature computed in image pixels: iris position in each eye's roll-corrected canthus frame (eyelids move with vertical gaze and are not used as reference), plus the nose-tip offset from the canthus midpoint in inter-ocular units as a head yaw/pitch proxy. All components are invariant to image translation, scale and roll, and are smoothed with the same EMA before targeting.
+
+**Calibration** starts automatically with tracking and cannot end in an error state:
+
+1. **КАЛИБРОВКА 1/6…6/6** — look at the centre of each highlighted button (both arrows, all four cards). Each takes 0.7 s to settle and 1 s of samples; the button's own progress bar fills while samples are collected.
+2. **ДВИЖЕНИЕ ГОЛОВЫ** — keep looking at the highlighted card closest to the viewport centre while slowly turning the head left-right and up-down for 3 s. This teaches the model which feature changes are head movement rather than a new gaze target.
+3. **ПРОВЕРКА 1/6…6/6** — the same buttons in reverse order, capturing drift between passes.
+4. **УТОЧНЕНИЕ** (only if needed) — buttons whose windows disagree (for example after looking elsewhere) are measured once more and the median of three windows is used. Good measurements are always kept.
+
+The whole sequence takes about 25 seconds with stable tracking. Without a visible face, or with closed eyes, the guidance shows the reason and collection waits; brief blinks keep the current window, and interruptions longer than 0.5 s restart only that button. A restless fixation is retried for up to 6 s, after which its settled last second is accepted. Resizing or changing category during calibration restarts only the current window.
+
+**Targeting.** A shared-covariance Gaussian classifier is fitted over the per-button fixations. Its covariance combines EMA-smoothed jitter, drift between passes, and head rotation at fixed gaze (scaled to 1.5° from the head-movement step, or a geometric prior if the head barely moved), so natural head movement, eye-only and head-pointing styles all work. A button is entered only with ≥75% posterior while at most 40% of the way to any neighbour, and is retained up to the midpoint — the feature-space analogue of the 12 px inset and border. Gaze on a gap between buttons, off the grid (for example the camera panel) or with invalid data selects nothing. A confident gaze is placed at the centre of its existing button, so the dwell engine's 12 px inset and border retention apply unchanged: a 900 ms fixation triggers once, flashes the border, then a 500 ms cooldown follows. A frame without gaze data (a blink) holds an active dwell for up to 200 ms without triggering; unclassified gaze resets it immediately. Confident frames well inside a button slowly correct common drift, bounded to a third of the button spacing and never learned from gaze on a gap. If two buttons remain hard to distinguish, the completion message names them; **КАЛИБРОВАТЬ ВЗГЛЯД** repeats the sequence at any time after completion.
+
+Camera and GUI clocks are never compared: capture-process frame timestamps order samples and measure gaps, while a stall is detected from sample arrival time in the GUI. Webcam gaze estimates depend on lighting, glasses, eye visibility and head position; this prototype is not equivalent to a dedicated eye tracker. Hardware-free end-to-end tests drive the page with `gaze_simulation.py`, a perspective-projected 3D head and eye model with pixel noise, blinks, drift and different head-use styles.
+
+AAC prefers `mp.solutions.face_mesh.FaceMesh(refine_landmarks=True, max_num_faces=1, min_detection_confidence=0.5)` when available. The pinned MediaPipe 1.0.1 runtime has removed Solutions, so it uses the supported single-face Tasks landmarker with the same 478 landmarks and detection threshold. Camera reads and inference run on separate threads inside the isolated capture process; only the latest 320-pixel preview is transported and rendered, while ordered timestamped gaze samples feed the dwell engine. The GUI polls at 16 ms and does not perform inference or speech. The camera requests 640×480 / 30 FPS; actual throughput is hardware-dependent, not a guaranteed rate.
+
+`pyttsx3` speech runs on a serialized daemon thread with its own Windows COM apartment. An installed Russian voice is selected by language metadata; missing voices or speech failures are reported in the existing guidance field. Install AAC dependencies into the interpreter running the app with `python -m pip install -r requirements.txt`. Run AAC checks with `python -B -m unittest test_gaze test_gaze_capture`.
 
 ## Voice Acoustics
 
