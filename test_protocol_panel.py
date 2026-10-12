@@ -36,6 +36,7 @@ class ProtocolPanelTests(unittest.TestCase):
         self.page.record_start = 0
         self.page.record_end = 15
         self.page._run_analysis()
+        self.page.protocol_panel.reveal_controller.animation.setCurrentTime(240)
         self.qt.processEvents()
 
     def test_completion_splits_space_without_overlap_and_reset_restores_video(self):

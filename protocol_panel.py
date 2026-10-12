@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QObject, QEvent, QVariantAnimation, QEasingCurve
 from PyQt6.QtGui import QFont, QTextDocument
 from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtWidgets import QFileDialog, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget
@@ -130,11 +130,63 @@ def _band_text(results):
     return f'{text} Диапазон ограничен {cause}: движения быстрее {_num(max_freq, 1)} Гц не оценивались.'
 
 
+class ReportReveal(QObject):
+    """Animate a dock within its own viewport without moving page controls."""
+
+    def __init__(self, container, panel):
+        super().__init__(container)
+        self.container = container
+        self.panel = panel
+        self.fraction = 0.0
+        self.animation = QVariantAnimation(self)
+        self.animation.setDuration(240)
+        self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self.animation.valueChanged.connect(self._set_fraction)
+        self.animation.finished.connect(lambda: self._set_fraction(.5))
+        container.installEventFilter(self)
+        panel.installEventFilter(self)
+
+    def _set_fraction(self, fraction):
+        self.fraction = float(fraction)
+        layout = self.container.layout()
+        margins = layout.contentsMargins()
+        available = max(0, self.container.height() - margins.top() - margins.bottom()
+                        - max(0, layout.spacing()))
+        self.panel.setFixedHeight(round(available * self.fraction))
+
+    def reveal(self):
+        self.animation.stop()
+        self._set_fraction(0.0)
+        self.panel.show()
+        self.animation.setStartValue(0.0)
+        self.animation.setEndValue(.5)
+        self.animation.start()
+
+    def _restore(self):
+        self.animation.stop()
+        self.fraction = 0.0
+        self.panel.setMinimumHeight(0)
+        self.panel.setMaximumHeight(16777215)
+
+    def eventFilter(self, watched, event):
+        if watched is self.panel and event.type() == QEvent.Type.Hide and self.panel.isHidden():
+            self._restore()
+        elif watched is self.container:
+            if event.type() in (QEvent.Type.Resize, QEvent.Type.Show) and not self.panel.isHidden():
+                self._set_fraction(self.fraction)
+            elif event.type() == QEvent.Type.Hide:
+                if self.animation.state() == QVariantAnimation.State.Running:
+                    self.animation.stop()
+                    self._set_fraction(.5)
+        return super().eventFilter(watched, event)
+
+
 class ProtocolPanel(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.report = ''
         self.report_name = 'hand_motion_report'
+        self.reveal_controller = None
         self.setObjectName('protocolPanel')
         self.setMinimumSize(0, 0)
         self.setStyleSheet('''
@@ -192,6 +244,15 @@ class ProtocolPanel(QFrame):
         scroll.setWidget(body)
         layout.addWidget(scroll, 1)
         self.hide()
+
+    def animate_in(self, container):
+        self.reveal_controller = ReportReveal(container, self)
+
+    def reveal(self):
+        if self.reveal_controller is not None:
+            self.reveal_controller.reveal()
+        else:
+            self.show()
 
     def _show_text(self, status, detail, action, limitation):
         self.status_label.setText(status)

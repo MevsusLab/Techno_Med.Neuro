@@ -42,6 +42,7 @@ class RPPGProtocolTests(unittest.TestCase):
                                              'frames': 900, 'start': 0, 'progress': 1, 'message': 'Complete'}, samples)
         self.page.worker = worker
         self.page._finished()
+        self.page.protocol_panel.reveal_controller.animation.setCurrentTime(240)
         self.qt.processEvents()
 
     def test_completed_split_and_close_restore_full_video(self):

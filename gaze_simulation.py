@@ -8,7 +8,7 @@ gaze_capture produces them: telemetry ratios and tracking features, EMA-smoothed
 
 import numpy as np
 
-from gaze_engine import GazeSmoother, gaze_features, tracking_features
+from gaze_engine import GazeSignalFilter, gaze_features, tracking_features
 
 LANDMARKS = 478
 FIXATE_MESSAGE = 'Фиксируйте взгляд на слове или стрелке до заполнения шкалы.'
@@ -71,13 +71,12 @@ class VirtualUser:
         self.time = start
         self.head_offset = np.zeros(2)
         self.head_walk = np.zeros(2)
-        self.gaze_smoother = GazeSmoother()
-        self.feature_smoother = GazeSmoother()
+        self.signal_filter = GazeSignalFilter()
 
     def drift(self, degrees):
         self.head_offset = self.head_offset + self.rng.normal(0, degrees, 2)
 
-    def sample(self, point, sweep=False, face=True, blink=False):
+    def sample(self, point, sweep=False, face=True, blink=False, iris_spike=None, roll=0.0):
         self.time += 1.0 / self.fps
         gaze_angle = screen_angles(point) + self.rng.normal(0, 0.2, 2)
         self.head_walk = 0.98 * self.head_walk + self.rng.normal(0, self.micro_motion, 2)
@@ -89,13 +88,19 @@ class VirtualUser:
         if face:
             pixels = face_landmarks(gaze_angle, head, blink, self.iris_gain, self.nose_depth,
                                     self.noise, self.rng)
+            if iris_spike is not None:
+                pixels[[468, 473]] += np.asarray(iris_spike, dtype=float)
+            if roll:
+                angle = np.deg2rad(roll)
+                rotation = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+                pixels = (pixels - [320, 240]) @ rotation.T + [320, 240]
             try:
                 ratios, features = gaze_features(pixels), tracking_features(pixels)
                 message = FIXATE_MESSAGE
             except ValueError as exc:
                 message = str(exc)
-        return {'gaze': self.gaze_smoother.update(ratios, self.time),
-                'features': self.feature_smoother.update(features, self.time),
+        ratios, smoothed, features = self.signal_filter.update(ratios, features, self.time)
+        return {'gaze': ratios, 'features': smoothed,
                 'raw_features': features, 'message': message, 'timestamp': self.time}
 
 

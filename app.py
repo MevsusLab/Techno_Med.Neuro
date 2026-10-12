@@ -30,10 +30,15 @@ from video_capture import check_video_audio_dependency
 from gaze_engine import (DwellEngine, DwellState, GazeTargeting, fit_gaze_classifier,
                          inconsistent_targets, calibration_sample, best_effort_sample,
                          DWELL_THRESHOLD_MS, COOLDOWN_MS, FEATURE_DIM,
-                         CALIBRATION_SETTLE_SECONDS, CALIBRATION_SAMPLE_SECONDS,
+                          CALIBRATION_SETTLE_SECONDS, CALIBRATION_SAMPLE_SECONDS,
+                          MAX_GAZE_GAP_SECONDS, DWELL_GRACE_SECONDS,
                          CALIBRATION_MAX_WINDOW_SECONDS, CALIBRATION_GAP_SECONDS,
                          CALIBRATION_ACCEPT_SECONDS, CALIBRATION_MIN_SAMPLES, HEAD_SWEEP_SECONDS)
 from aac_speech import SpeechWorker
+from motor_capture import MotorCaptureWorker, MOTOR_VIDEO_FILTER
+from motor_engine import analyze_tapping, motor_band
+from motor_protocol import MotorProtocolPanel, MOTOR_DISCLAIMER
+from dashboard_catalog import DashboardCatalog
 from i18n_ru import RussianLabel as QLabel, ru
 
 
@@ -394,6 +399,8 @@ class StatusBar(QWidget):
 
 
 class DashboardPage(QWidget):
+    module_requested = pyqtSignal(int)
+
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
@@ -413,7 +420,7 @@ class DashboardPage(QWidget):
             ("Version", "0.1.0-alpha"),
             ("Backend", "MediaPipe + SciPy DSP"),
             ("Input", "USB Webcam + Microphone"),
-            ("Modules", "5 prototypes / 0 planned"),
+            ("Modules", "6 исследовательских модулей"),
             ("Framework", "PyQt6 / OpenCV"),
         ]):
             kl = QLabel(k)
@@ -427,32 +434,32 @@ class DashboardPage(QWidget):
         info_lay.addLayout(info_grid)
         top.addWidget(info_panel)
         mod_panel, mod_lay = panel("Module Registry")
-        table = QTableWidget(5, 3)
-        table.setHorizontalHeaderLabels(["MODULE", "TYPE", "STATUS"])
+        table = QTableWidget(6, 3)
+        table.setHorizontalHeaderLabels(["МОДУЛЬ", "ТИП", "СТАТУС"])
         table.horizontalHeader().setFont(f_sans(8, True))
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         table.setStyleSheet(f"""
-            QTableWidget {{ background: {BG}; border: 1px solid {BORDER_LIGHT};
+            QTableWidget {{ background: {BG}; color: {TEXT_DIM}; border: 1px solid {BORDER_LIGHT};
                 gridline-color: {BORDER_LIGHT}; font-family: Consolas; font-size: 10px; }}
             QHeaderView::section {{ background: {BG_ALT}; border: 1px solid {BORDER_LIGHT};
                 padding: 4px; color: {TEXT_DIM}; }}
         """)
         for r, (name, typ, st) in enumerate([
-            ("Hand Motion", "Research", "PROTOTYPE"),
-            ("Facial Asymmetry", "Research", "PROTOTYPE"),
-            ("rPPG Vitals", "Research", "PROTOTYPE"),
-            ("Eye-Tracking AAC", "Assistive", "PROTOTYPE"),
-            ("Voice Biomarkers", "Research", "PROTOTYPE"),
+            ("ТРЕМОР", "Исследовательский", "ГОТОВ / ПРОТОТИП"),
+            ("НЕЙРОМИМИКА", "Исследовательский", "ГОТОВ / ПРОТОТИП"),
+            ("ПУЛЬС (rPPG)", "Мониторинг", "ГОТОВ / ПРОТОТИП"),
+            ("АЙТРЕКИНГ", "Вспомогательный", "ГОТОВ / ПРОТОТИП"),
+            ("ГОЛОС", "Исследовательский", "ГОТОВ / ПРОТОТИП"),
+            ("МОТОРИКА", "Исследовательский", "ГОТОВ / ПРОТОТИП"),
         ]):
-            table.setItem(r, 0, QTableWidgetItem(ru(name)))
-            table.setItem(r, 1, QTableWidgetItem(ru(typ)))
-            item = QTableWidgetItem(st)
-            item.setForeground(QColor(TEXT_DIM))
-            table.setItem(r, 2, item)
-        table.setFixedHeight(180)
+            for column, value in enumerate((name, typ, st)):
+                item = QTableWidgetItem(value)
+                item.setForeground(QColor(TEXT_DIM))
+                table.setItem(r, column, item)
+        table.setFixedHeight(210)
         mod_lay.addWidget(table)
         top.addWidget(mod_panel)
         layout.addLayout(top)
@@ -468,48 +475,9 @@ class DashboardPage(QWidget):
         arch_text.setWordWrap(True)
         arch_lay.addWidget(arch_text)
         layout.addWidget(arch_panel)
-        bottom = QHBoxLayout()
-        bottom.setSpacing(12)
-        diag_panel, diag_lay = panel("Research Modules")
-        for name, desc in [
-            ("TREMOR", "Webcam hand-motion measurements: frequency, RMS displacement and spectrum"),
-            ("FACIAL", "Rest / smile / brow-raise bilateral geometry and movement measurements"),
-            ("VOICE", "Sustained vowel: F0, local jitter/shimmer, RAP/APQ5 and HNR"),
-        ]:
-            row = QHBoxLayout()
-            tag = QLabel(name)
-            tag.setFont(f_mono(8, True))
-            tag.setFixedWidth(60)
-            tag.setStyleSheet(f"color: {NAVY_DEEP}; border: none;")
-            row.addWidget(tag)
-            d = QLabel(desc)
-            d.setFont(f_sans(9))
-            d.setStyleSheet(f"color: {TEXT_DIM}; border: none;")
-            d.setWordWrap(True)
-            row.addWidget(d)
-            diag_lay.addLayout(row)
-        bottom.addWidget(diag_panel)
-        assist_panel, assist_lay = panel("Assistive + Monitoring")
-        for name, desc in [
-            ("AAC", "Calibrated gaze grid with dwell selection and speech output"),
-            ("rPPG", "Skin-region green-channel pulse-rate research prototype"),
-        ]:
-            row = QHBoxLayout()
-            tag = QLabel(name)
-            tag.setFont(f_mono(8, True))
-            tag.setFixedWidth(60)
-            tag.setStyleSheet(f"color: {NAVY_DEEP}; border: none;")
-            row.addWidget(tag)
-            d = QLabel(desc)
-            d.setFont(f_sans(9))
-            d.setStyleSheet(f"color: {TEXT_DIM}; border: none;")
-            d.setWordWrap(True)
-            row.addWidget(d)
-            assist_lay.addLayout(row)
-        assist_lay.addStretch()
-        bottom.addWidget(assist_panel)
-        layout.addLayout(bottom)
-        layout.addStretch()
+        self.catalog = DashboardCatalog()
+        self.catalog.module_requested.connect(self.module_requested)
+        layout.addWidget(self.catalog, 1)
 
 
 class VideoLabel(QLabel):
@@ -607,6 +575,7 @@ class TremorPage(QWidget):
         self.protocol_panel = ProtocolPanel()
         self.protocol_panel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         self.capture_layout.addWidget(self.protocol_panel, 1)
+        self.protocol_panel.animate_in(self.capture_area)
         left.addWidget(self.capture_area, 1)
 
         controls = QHBoxLayout()
@@ -1005,7 +974,7 @@ class TremorPage(QWidget):
             results['source'] = 'video'
             results['source_file'] = os.path.basename(self._source_path)
         self.protocol_panel.set_results(results)
-        self.protocol_panel.show()
+        self.protocol_panel.reveal()
 
     def _plot_psd(self, r):
         ax = self.psd_canvas.ax
@@ -1115,6 +1084,7 @@ class FacialPage(QWidget):
         self.protocol_panel = FacialProtocolPanel()
         self.protocol_panel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         self.capture_layout.addWidget(self.protocol_panel, 1)
+        self.protocol_panel.animate_in(self.capture_area)
         left.addWidget(self.capture_area, 1)
         controls = QHBoxLayout()
         controls.setSpacing(6)
@@ -1344,7 +1314,7 @@ class FacialPage(QWidget):
                 self.verdict.setText('Measurements complete. Percentage of eye-corner span; not a probability of paresis or stroke.')
                 self.video.setText('RECORDING COMPLETE / SEE RESULTS')
                 self.protocol_panel.set_results(result)
-                self.protocol_panel.show()
+                self.protocol_panel.reveal()
             else:
                 set_badge(self.badge, 'IDLE', TEXT_MUTED)
                 self.video.setText('CAPTURE CANCELLED')
@@ -1415,6 +1385,350 @@ class FacialPage(QWidget):
         return self.worker is None
 
 
+class MotorPage(QWidget):
+    capture_finished = pyqtSignal()
+
+    def __init__(self, status_bar=None):
+        super().__init__()
+        self.status_bar = status_bar
+        self.worker = None
+        self.samples = []
+        self.results = None
+        self.cancelled = self.closing = self._reset_pending = False
+        self.capture_error = ''
+        self.source_kind, self.source_path = 'camera', ''
+        self.last_plot = 0.0
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._poll)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(8)
+        header = QHBoxLayout()
+        title = QLabel('МОТОРИКА / ОЦЕНКА БРАДИКИНЕЗИИ (ТЕСТ UPDRS 3.4)')
+        title.setFont(f_sans(13, True))
+        title.setStyleSheet(f'color: {TEXT};')
+        title.setWordWrap(True)
+        header.addWidget(title, 1)
+        self.badge = make_status_badge('IDLE', TEXT_MUTED)
+        header.addWidget(self.badge)
+        layout.addLayout(header)
+        subtitle = QLabel('Анализ частоты и затухания амплитуды движений | MediaPipe Hands | Исследовательский прототип')
+        subtitle.setFont(f_mono(9))
+        subtitle.setStyleSheet(f'color: {TEXT_DIM};')
+        subtitle.setWordWrap(True)
+        layout.addWidget(subtitle)
+        body = QHBoxLayout()
+        body.setSpacing(8)
+        left = QVBoxLayout()
+        left.setSpacing(8)
+        self.guidance = QLabel()
+        self.guidance.setWordWrap(True)
+        self.guidance.setFont(f_mono(10, True))
+        self.guidance.setStyleSheet(f'color: {NAVY}; background: {BG_ALT}; border: 1px solid {BORDER}; padding: 6px;')
+        left.addWidget(self.guidance)
+        self.video = VideoLabel('МОТОРИКА / БОЛЬШОЙ И УКАЗАТЕЛЬНЫЙ ПАЛЬЦЫ (4–8)')
+        self.video.setMinimumSize(480, 0)
+        self.video.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.video.setStyleSheet(f'background: {NAVY}; color: #94A3B8; border: 1px solid {BORDER};')
+        self.capture_area = QWidget()
+        self.capture_area.setMinimumSize(0, 0)
+        self.capture_layout = QVBoxLayout(self.capture_area)
+        self.capture_layout.setContentsMargins(0, 0, 0, 0)
+        self.capture_layout.setSpacing(0)
+        self.capture_layout.addWidget(self.video, 1)
+        self.protocol_panel = MotorProtocolPanel()
+        self.protocol_panel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.capture_layout.addWidget(self.protocol_panel, 1)
+        self.protocol_panel.animate_in(self.capture_area)
+        self.split_animation = self.protocol_panel.reveal_controller.animation
+        left.addWidget(self.capture_area, 1)
+        controls = QHBoxLayout()
+        controls.setSpacing(6)
+        self.start = cmd_button('НАЧАТЬ ТЕСТ МОТОРИКИ')
+        self.upload_video = cmd_button('UPLOAD VIDEO FILE', primary=False)
+        self.upload_video.setToolTip('MP4, AVI, MOV: одна кисть, полный цикл раскрытия–смыкания, 10–15 секунд, минимум 25 кадр/с.')
+        self.stop = cmd_button('STOP', primary=False)
+        self.reset = cmd_button('RESET', primary=False)
+        for button in (self.start, self.upload_video, self.stop, self.reset):
+            controls.addWidget(button)
+        self.start.clicked.connect(self._start)
+        self.upload_video.clicked.connect(self._upload_video)
+        self.stop.clicked.connect(self._stop)
+        self.reset.clicked.connect(self._reset)
+        left.addLayout(controls)
+        self.progress = thin_progress()
+        left.addWidget(self.progress)
+        body.addLayout(left, 3)
+        right = QVBoxLayout()
+        right.setSpacing(8)
+        index_panel, index_layout = panel('ИНДЕКС МОТОРИКИ И ЗАМЕДЛЕНИЯ')
+        index_grid = QGridLayout()
+        index_grid.setSpacing(2)
+        self.frequency = MetricDisplay('Частота тапов', '---', 'Гц')
+        self.decrement = MetricDisplay('Изменение амплитуды', '---', '%')
+        self.frequency.setToolTip('Отображаемый ориентир >3 Гц; диапазон наблюдения протокола начинается с 2,8 Гц.')
+        self.decrement.setToolTip('Отрицательное значение — снижение. Процент рассчитывается по линейному тренду пиков.')
+        index_grid.addWidget(self.frequency, 0, 0)
+        index_grid.addWidget(self.decrement, 0, 1)
+        index_layout.addLayout(index_grid)
+        self.verdict = QLabel('Данные появятся после завершённой пробы.')
+        self.verdict.setWordWrap(True)
+        self.verdict.setFont(f_mono(8))
+        self.verdict.setStyleSheet(f'color: {TEXT_DIM}; border: none;')
+        index_layout.addWidget(self.verdict)
+        right.addWidget(index_panel)
+        parameters, parameter_layout = panel('КИНЕМАТИЧЕСКИЕ ПАРАМЕТРЫ')
+        grid = QGridLayout()
+        grid.setSpacing(2)
+        self.taps = MetricDisplay('Полных циклов', '---')
+        self.rhythm = MetricDisplay('Ритм CV', '---', '%')
+        self.rhythm.setToolTip('Отображаемый ориентир <15%; диапазон наблюдения протокола допускает CV до 20%.')
+        self.amplitude = MetricDisplay('Средняя пиковая амплитуда', '---', 'норм. ед.')
+        grid.addWidget(self.taps, 0, 0)
+        grid.addWidget(self.rhythm, 0, 1)
+        grid.addWidget(self.amplitude, 1, 0, 1, 2)
+        parameter_layout.addLayout(grid)
+        self.quality = QLabel('Нормирование: расстояние 4–8 / длина ладони 0–9.')
+        self.quality.setWordWrap(True)
+        self.quality.setFont(f_mono(8))
+        self.quality.setStyleSheet(f'color: {TEXT_DIM}; border: none;')
+        parameter_layout.addWidget(self.quality)
+        right.addWidget(parameters)
+        chart_header = QHBoxLayout()
+        chart_header.addWidget(QLabel('РАСКРЫТИЕ ПАЛЬЦЕВ / ПИКИ И ТРЕНД'), 1)
+        self.chart_mode = QComboBox()
+        self.chart_mode.addItems(['Сигнал', 'Пики и тренд'])
+        self.chart_mode.currentIndexChanged.connect(self._plot_result)
+        chart_header.addWidget(self.chart_mode)
+        right.addLayout(chart_header)
+        self.wave = PlotCanvas()
+        self.wave.mpl_connect('scroll_event', self._zoom_chart)
+        right.addWidget(self.wave, 1)
+        disclaimer = QLabel(MOTOR_DISCLAIMER)
+        disclaimer.setWordWrap(True)
+        disclaimer.setFont(f_mono(8))
+        right.addWidget(disclaimer)
+        body.addLayout(right, 2)
+        layout.addLayout(body)
+        self._reset()
+
+    def _restore_video(self):
+        self.protocol_panel.hide()
+
+    def _show_protocol(self):
+        self.protocol_panel.reveal()
+
+    def _start(self):
+        self._start_source()
+
+    def _upload_video(self):
+        if self.worker is not None or self.closing:
+            return
+        path, _ = QFileDialog.getOpenFileName(self, 'Выберите видео теста моторики', '', MOTOR_VIDEO_FILTER)
+        if path:
+            self._start_source(path)
+
+    def _start_source(self, path=''):
+        if self.worker is not None or self.closing:
+            return
+        self._reset()
+        self.cancelled = self._reset_pending = False
+        self.source_kind, self.source_path = ('video', str(path)) if path else ('camera', '')
+        self.worker = MotorCaptureWorker(path=path, parent=self)
+        self.worker.finished.connect(self._finished)
+        self.worker.failed.connect(self._capture_failed)
+        self.worker.status.connect(self._capture_status)
+        self.start.setEnabled(False)
+        self.upload_video.setEnabled(False)
+        self.stop.setEnabled(True)
+        self.guidance.setText('Проверка видео и запуск модели кисти…' if path else 'Запуск камеры и модели кисти…')
+        set_badge(self.badge, 'STARTING', AMBER)
+        self.last_plot = 0
+        self.timer.start(40)
+        self.worker.start()
+
+    def _stop(self):
+        if self.worker is not None:
+            self.cancelled = True
+            self.worker.requestInterruption()
+            self.stop.setEnabled(False)
+            set_badge(self.badge, 'STOPPING', AMBER)
+
+    def _reset(self):
+        self._stop()
+        self._reset_pending = self.worker is not None
+        self._restore_video()
+        self.protocol_panel.clear()
+        self.samples = []
+        self.results = None
+        self.capture_error = ''
+        self.progress.setValue(0)
+        self.chart_mode.setEnabled(False)
+        self.wave.clear_plot()
+        for metric in (self.frequency, self.decrement, self.taps, self.rhythm, self.amplitude):
+            metric.set_value('---', TEXT)
+        self.verdict.setText('Данные появятся после завершённой пробы.')
+        self.quality.setText('Нормирование: расстояние 4–8 / длина ладони 0–9.')
+        self.guidance.setText('Одна кисть ладонью к камере. Максимально быстро и широко раскрывайте и смыкайте большой и указательный пальцы 15 секунд.')
+        self.video.setText('МОТОРИКА / БОЛЬШОЙ И УКАЗАТЕЛЬНЫЙ ПАЛЬЦЫ (4–8)')
+        self.start.setEnabled(self.worker is None and not self.closing)
+        self.upload_video.setEnabled(self.worker is None and not self.closing)
+        self.stop.setEnabled(False)
+        set_badge(self.badge, 'IDLE', TEXT_MUTED)
+        if self.worker is None:
+            self.cancelled = False
+
+    def _capture_status(self, message):
+        if self.worker is not None and not self.cancelled and not self.samples:
+            self.guidance.setText(message)
+
+    def _capture_failed(self, message):
+        if not self.cancelled:
+            self.capture_error = message
+            self.guidance.setText(message)
+            self.verdict.setText('Запись не завершена: ' + message)
+            self.protocol_panel.clear()
+            set_badge(self.badge, 'RETRY', AMBER)
+
+    def _poll(self):
+        try:
+            self._drain_frames()
+        except Exception as exc:
+            self._capture_failed('Ошибка обработки кадров: ' + str(exc))
+            if self.worker is not None:
+                self.worker.requestInterruption()
+
+    def _drain_frames(self):
+        if self.worker is None:
+            return
+        latest, samples = self.worker.take_pending()
+        if self.cancelled or self.capture_error:
+            return
+        self.samples.extend(samples)
+        if latest is not None:
+            if latest.get('message'):
+                self.guidance.setText(latest['message'])
+            self.progress.setValue(int(latest['progress'] * 100))
+            if latest['state'] != 'COMPLETE':
+                set_badge(self.badge, latest['state'], GREEN)
+            image = latest.get('image')
+            if image is not None:
+                h, w = image.shape[:2]
+                self.video.setPixmap(QPixmap.fromImage(QImage(image.data, w, h, image.strides[0], QImage.Format.Format_RGB888)))
+            if self.status_bar:
+                if self.source_kind == 'camera':
+                    self.status_bar.update_badge('CAM', 'ACTIVE', GREEN)
+                self.status_bar.update_badge('MEDIAPIPE', 'HAND LOADED', GREEN)
+        if samples and time.perf_counter() - self.last_plot > .3:
+            self.last_plot = time.perf_counter()
+            self.wave.clear_plot()
+            origin = self.samples[0]['timestamp']
+            self.wave.ax.plot([s['timestamp'] - origin for s in self.samples],
+                              [s['distance'] if s['distance'] is not None else np.nan for s in self.samples],
+                              color=NAVY, linewidth=.8)
+            self._chart_labels()
+            self.wave.draw_idle()
+
+    def _finished(self):
+        worker = self.worker
+        if worker is None:
+            return
+        try:
+            self._drain_frames()
+            if not self.cancelled:
+                if worker.error or self.capture_error:
+                    raise ValueError(worker.error or self.capture_error)
+                if worker.reason != 'deadline':
+                    raise ValueError('Проба прервана до окончания записи.')
+                start, end, _, _ = worker.snapshot()
+                result = analyze_tapping(self.samples, start, end)
+                result['source'] = self.source_kind
+                if self.source_kind == 'video':
+                    result['source_file'] = os.path.basename(self.source_path)
+                self._render(result)
+            elif not self._reset_pending:
+                self.guidance.setText('Проба отменена. Начните новую запись для полного анализа.')
+                self.video.setText('RECORDING CANCELLED')
+                set_badge(self.badge, 'IDLE', TEXT_MUTED)
+        except Exception as exc:
+            self.results = None
+            self.protocol_panel.clear()
+            self._restore_video()
+            self.verdict.setText('Результат не рассчитан: ' + str(exc))
+            self.guidance.setText(str(exc))
+            self.video.setText('RECORDING ENDED / RETRY REQUIRED')
+            set_badge(self.badge, 'RETRY', AMBER)
+        finally:
+            self.timer.stop()
+            self.worker = None
+            worker.deleteLater()
+            self.start.setEnabled(not self.closing)
+            self.upload_video.setEnabled(not self.closing)
+            self.stop.setEnabled(False)
+            if self.status_bar:
+                self.status_bar.update_badge('CAM', 'DISCONNECTED', TEXT_MUTED)
+                self.status_bar.update_badge('MEDIAPIPE', 'NOT LOADED', TEXT_MUTED)
+            self.capture_finished.emit()
+
+    def _render(self, result):
+        self.results = result
+        self.frequency.set_value(f'{result["tap_frequency"]:.2f}')
+        self.decrement.set_value(f'{result["amplitude_decrement"]:.1f}')
+        self.taps.set_value(str(result['total_taps']))
+        self.rhythm.set_value(f'{result["rhythm_cv"]:.1f}')
+        self.amplitude.set_value(f'{result["mean_amplitude"]:.2f}')
+        band = motor_band(result)
+        self.verdict.setText({'stable': 'Темп, амплитуда и ритм стабильны по выбранным правилам наблюдения.',
+                              'borderline': 'Пограничные показатели: сравните повторную пробу после отдыха.',
+                              'marked': 'Выраженное замедление, снижение амплитуды или нерегулярный ритм: нужна очная оценка.'}[band])
+        self.quality.setText(f'Кадров: {result["samples"]}; частота: {result["rate"]:.1f}/с; покрытие: {result["coverage"] * 100:.1f}%.')
+        self.chart_mode.setEnabled(True)
+        self._plot_result()
+        self.protocol_panel.set_results(result)
+        self.progress.setValue(100)
+        self.guidance.setText('RECORDING COMPLETE / SEE RESULTS')
+        set_badge(self.badge, 'COMPLETE', GREEN)
+        self._show_protocol()
+
+    def _chart_labels(self):
+        self.wave.ax.set_xlabel('Время (с)', fontsize=7)
+        self.wave.ax.set_ylabel('Расстояние 4–8 / 0–9', fontsize=7)
+        self.wave.ax.set_title('РАСКРЫТИЕ ПАЛЬЦЕВ / ПИКИ И ТРЕНД', fontsize=8, loc='left')
+
+    def _plot_result(self, index=None):
+        if self.results is None:
+            return
+        r = self.results
+        self.wave.clear_plot()
+        ax = self.wave.ax
+        if self.chart_mode.currentIndex() == 0:
+            ax.plot(r['time'], r['distance'], color='#CBD5E1', linewidth=.5)
+            ax.plot(r['time'], r['smoothed'], color=NAVY, linewidth=.8, label='Раскрытие')
+        ax.scatter(r['peak_times'], r['peak_amplitudes'], s=12, color='#2563EB', label='Полные циклы')
+        ax.plot(r['peak_times'], r['trend'], color=AMBER, linewidth=1.2, label='Линейный тренд')
+        ax.legend(fontsize=6, loc='upper right')
+        self._chart_labels()
+        self.wave.draw_idle()
+
+    def _zoom_chart(self, event):
+        if event.inaxes is not self.wave.ax or event.xdata is None or self.results is None:
+            return
+        left, right = self.wave.ax.get_xlim()
+        factor = .8 if event.button == 'up' else 1.25
+        self.wave.ax.set_xlim(event.xdata + (left - event.xdata) * factor,
+                              event.xdata + (right - event.xdata) * factor)
+        self.wave.draw_idle()
+
+    def cleanup(self):
+        self.closing = True
+        self.split_animation.stop()
+        self._stop()
+        self.start.setEnabled(False)
+        self.upload_video.setEnabled(False)
+        self.reset.setEnabled(False)
+        return self.worker is None
+
+
 class RPPGPage(QWidget):
     capture_finished = pyqtSignal()
 
@@ -1468,6 +1782,7 @@ class RPPGPage(QWidget):
         self.protocol_panel = RPPGProtocolPanel()
         self.protocol_panel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         self.capture_layout.addWidget(self.protocol_panel, 1)
+        self.protocol_panel.animate_in(self.capture_area)
         left.addWidget(self.capture_area, 1)
         controls = QHBoxLayout()
         controls.setSpacing(6)
@@ -1710,7 +2025,7 @@ class RPPGPage(QWidget):
         if self.status_bar:
             self.status_bar.update_badge('DSP', 'CAUTION' if warnings else 'COMPLETE', AMBER if warnings else GREEN)
         self.protocol_panel.set_results(result)
-        self.protocol_panel.show()
+        self.protocol_panel.reveal()
 
     def cleanup(self):
         self.closing = True
@@ -2185,6 +2500,16 @@ class AACPage(QWidget):
                         self.status_bar.update_badge('MEDIAPIPE', 'LOADED', GREEN)
                 if not samples:
                     samples = [latest]
+            samples = [sample for sample in samples
+                       if np.isfinite(sample['timestamp']) and (self.last_gaze_timestamp is None
+                       or sample['timestamp'] > self.last_gaze_timestamp)]
+            if (samples and not self.calibration_active
+                    and samples[-1]['timestamp'] - samples[0]['timestamp'] > MAX_GAZE_GAP_SECONDS):
+                # A stalled GUI can receive seconds of buffered fixations.
+                # Only recent observations may select a word on its return.
+                self._lose_gaze()
+                cutoff = samples[-1]['timestamp'] - DWELL_GRACE_SECONDS
+                samples = [sample for sample in samples if sample['timestamp'] >= cutoff]
             if samples:
                 self.last_sample_arrival = now
             for sample in samples:
@@ -2534,9 +2859,21 @@ class VoicePage(QWidget):
         self.spectrogram = PlotCanvas()
         for plot in (self.wave, self.pitch_plot, self.spectrogram):
             graphs.addWidget(plot, 1)
-        layout.addLayout(graphs, 1)
+        self.capture_area = QWidget()
+        self.capture_area.setMinimumSize(0, 0)
+        self.capture_layout = QVBoxLayout(self.capture_area)
+        self.capture_layout.setContentsMargins(0, 0, 0, 0)
+        self.capture_layout.setSpacing(8)
+        self.chart_area = QWidget()
+        self.chart_area.setMinimumSize(0, 0)
+        self.chart_area.setLayout(graphs)
+        graphs.setContentsMargins(0, 0, 0, 0)
+        self.capture_layout.addWidget(self.chart_area, 1)
         self.protocol_panel = VoiceProtocolPanel()
-        layout.addWidget(self.protocol_panel, 1)
+        self.protocol_panel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.capture_layout.addWidget(self.protocol_panel, 1)
+        self.protocol_panel.animate_in(self.capture_area)
+        layout.addWidget(self.capture_area, 1)
 
     def _reset(self):
         if self.worker is not None:
@@ -2707,7 +3044,7 @@ class VoicePage(QWidget):
         for plot in (self.wave, self.pitch_plot, self.spectrogram):
             plot.draw_idle()
         self.protocol_panel.set_results(result)
-        self.protocol_panel.show()
+        self.protocol_panel.reveal()
         self.guidance.setText('Recording and acoustic analysis complete. See the reference guidance below.')
         set_badge(self.badge, 'COMPLETE', GREEN)
 
@@ -2723,7 +3060,7 @@ class VoicePage(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("TecnoMedNeuro — Исследовательский прототип веб-измерений")
+        self.setWindowTitle("TecnoMedNeuro — Интеллектуальная система цифровой нейродиагностики и мониторинговых модулей")
         self.setMinimumSize(1200, 750)
         self.resize(1400, 860)
         self.setStyleSheet(f"QMainWindow {{ background: {BG}; }} * {{ border-radius: 0px; }}")
@@ -2734,7 +3071,7 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        tabs = ["ОБЗОР", "ТРЕМОР", "НЕЙРОМИМИКА", "ПУЛЬС", "АЙТРЕКИНГ", "ГОЛОС"]
+        tabs = ["ОБЗОР", "ТРЕМОР", "НЕЙРОМИМИКА", "ПУЛЬС", "АЙТРЕКИНГ", "ГОЛОС", "МОТОРИКА"]
         self.nav = NavBar(tabs, self.switch_page)
         root.addWidget(self.nav)
 
@@ -2744,7 +3081,9 @@ class MainWindow(QMainWindow):
         self.tremor_page = TremorPage(status_bar=self.status_bar)
         self._close_pending = False
         self.tremor_page.capture_finished.connect(self._finish_close)
-        self.stack.addWidget(DashboardPage())
+        self.dashboard_page = DashboardPage()
+        self.dashboard_page.module_requested.connect(self.switch_page)
+        self.stack.addWidget(self.dashboard_page)
         self.stack.addWidget(self.tremor_page)
         self.facial_page = FacialPage(status_bar=self.status_bar)
         self.facial_page.capture_finished.connect(self._finish_close)
@@ -2758,15 +3097,18 @@ class MainWindow(QMainWindow):
         self.voice_page = VoicePage(status_bar=self.status_bar)
         self.voice_page.capture_finished.connect(self._finish_close)
         self.stack.addWidget(self.voice_page)
+        self.motor_page = MotorPage(status_bar=self.status_bar)
+        self.motor_page.capture_finished.connect(self._finish_close)
+        self.stack.addWidget(self.motor_page)
         root.addWidget(self.stack)
 
         root.addWidget(self.status_bar)
         self.switch_page(0)
 
     def switch_page(self, index):
-        if hasattr(self, 'voice_page') and index in (1, 2, 3, 4, 5):
+        if hasattr(self, 'motor_page') and index in (1, 2, 3, 4, 5, 6):
             pages = {1: self.tremor_page, 2: self.facial_page, 3: self.rppg_page,
-                     4: self.aac_page, 5: self.voice_page}
+                     4: self.aac_page, 5: self.voice_page, 6: self.motor_page}
             if any(page.worker is not None and key != index for key, page in pages.items()):
                 return
         self.stack.setCurrentIndex(index)
@@ -2778,7 +3120,8 @@ class MainWindow(QMainWindow):
         rppg_done = self.rppg_page.cleanup()
         voice_done = self.voice_page.cleanup()
         aac_done = self.aac_page.cleanup()
-        if tremor_done and face_done and rppg_done and voice_done and aac_done:
+        motor_done = self.motor_page.cleanup()
+        if tremor_done and face_done and rppg_done and voice_done and aac_done and motor_done:
             event.accept()
         else:
             self._close_pending = True

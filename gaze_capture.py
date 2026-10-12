@@ -14,7 +14,7 @@ from PyQt6.QtCore import QCoreApplication, QThread
 
 from capture_worker import CAMERA_STALL_TIMEOUT, CAMERA_STARTUP_TIMEOUT, ProcessCaptureWorker
 from face_capture import MODEL_PATH, ensure_face_model
-from gaze_engine import GazeSmoother, gaze_features, tracking_features
+from gaze_engine import GazeSignalFilter, gaze_features, tracking_features
 
 
 PREVIEW_WIDTH = 320
@@ -174,8 +174,7 @@ class GazeSession(QThread):
                 return
             self.camera = CameraFrames()
             self.camera.start()
-            smoother = GazeSmoother()
-            feature_smoother = GazeSmoother()
+            signal_filter = GazeSignalFilter()
             timestamp_ms = 0
             opened = time.perf_counter()
             frame_times = deque(maxlen=60)
@@ -221,8 +220,7 @@ class GazeSession(QThread):
                     for index in (468, 473):
                         if index < len(pixels):
                             cv2.circle(rgb, tuple(pixels[index].astype(int)), 4, (50, 170, 255), -1, cv2.LINE_AA)
-                gaze = smoother.update(gaze, acquired)
-                features = feature_smoother.update(raw_features, acquired)
+                gaze, features, raw_features = signal_filter.update(gaze, raw_features, acquired)
                 frame_times.append(acquired)
                 sample = {'gaze': gaze, 'features': features, 'raw_features': raw_features,
                           'message': message, 'timestamp': acquired}

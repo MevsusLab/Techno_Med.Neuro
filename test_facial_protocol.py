@@ -51,6 +51,7 @@ class FacialProtocolTests(unittest.TestCase):
         self.page.stage_bounds = bounds
         self.page.stage_counts = {stage: 60 for stage in bounds}
         self.page._finished()
+        self.page.protocol_panel.reveal_controller.animation.setCurrentTime(240)
         self.qt.processEvents()
         self.assertEqual(self.page.badge.text(), 'COMPLETE')
 

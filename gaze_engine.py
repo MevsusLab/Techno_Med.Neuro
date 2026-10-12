@@ -59,6 +59,10 @@ DRIFT_RATE = 0.02
 DRIFT_CONFIDENCE = 0.9
 DRIFT_FRACTION = 0.25
 DRIFT_BOUND = 0.35
+# A large, isolated feature step must recur on the next frame before it can
+# influence calibration or EMA. This rejects iris/landmark spikes without
+# widening target boundaries or accepting gaze on the gaps between buttons.
+FEATURE_JUMP_LIMIT = np.array([0.06, 0.04, 0.05, 0.05])
 
 # iris, inner canthus, outer canthus, upper lid, lower lid
 LEFT_EYE = (468, 133, 33, 159, 145)
@@ -90,16 +94,18 @@ def gaze_features(landmarks, pose=None):
             raise ValueError('Поверните голову прямо к экрану и держите её ровно.')
     horizontal, vertical = [], []
     for iris, inner, outer, upper, lower in (LEFT_EYE, RIGHT_EYE):
-        width = points[outer, 0] - points[inner, 0]
-        height = points[lower, 1] - points[upper, 1]
-        if abs(width) < 1e-8 or height <= abs(width) * EYE_OPEN_RATIO:
+        corners = points[[inner, outer], :2]
+        left, right = corners[np.argsort(corners[:, 0])]
+        axis, normal, width = _corner_frame(left, right)
+        height = float(np.dot(points[lower, :2] - points[upper, :2], normal))
+        if height <= width * EYE_OPEN_RATIO:
             raise ValueError('Глаза закрыты или слишком малы для отслеживания взгляда.')
-        ratio_x = (points[iris, 0] - points[inner, 0]) / width
-        ratio_y = (points[iris, 1] - points[upper, 1]) / height
+        ratio_x = float(np.dot(points[iris, :2] - left, axis) / width)
+        ratio_y = float(np.dot(points[iris, :2] - points[upper, :2], normal) / height)
         ratios = np.array([ratio_x, ratio_y])
         if not np.isfinite(ratios).all() or np.any(ratios < -0.25) or np.any(ratios > 1.25):
             raise ValueError('Взгляд не определяется стабильно; поправьте освещение и положение головы.')
-        horizontal.append(1.0 - ratio_x if width < 0 else ratio_x)
+        horizontal.append(ratio_x)
         vertical.append(ratio_y)
     return np.clip([np.mean(horizontal), np.mean(vertical)], 0.0, 1.0)
 
@@ -147,18 +153,31 @@ def tracking_features(landmarks):
 
 
 class GazeSmoother:
-    """EMA: smooth = alpha * new + (1 - alpha) * previous; resets after gaps."""
+    """EMA with optional frame-rate independence and brief missing-frame grace.
 
-    def __init__(self, alpha=EMA_ALPHA):
+    Missing observations always return None. Keeping history for a short blink
+    smooths reacquisition without emitting held gaze that could trigger dwell.
+    """
+
+    def __init__(self, alpha=EMA_ALPHA, time_aware=False, missing_grace=0.0):
         self.alpha = alpha
+        self.time_aware = time_aware
+        self.missing_grace = missing_grace
         self.reset()
 
     def reset(self):
         self.previous = None
         self.timestamp = None
+        self.last_valid_timestamp = None
 
     def update(self, gaze, timestamp):
         if gaze is None:
+            if (self.missing_grace > 0 and np.isfinite(timestamp)
+                    and self.last_valid_timestamp is not None
+                    and 0 <= timestamp - self.last_valid_timestamp <= self.missing_grace):
+                if self.timestamp is None or timestamp > self.timestamp:
+                    self.timestamp = timestamp
+                return None
             self.reset()
             return None
         value = np.asarray(gaze, dtype=float)
@@ -172,9 +191,69 @@ class GazeSmoother:
         if self.previous is None or timestamp - self.timestamp > MAX_GAZE_GAP_SECONDS:
             self.previous = value.copy()
         else:
-            self.previous = self.alpha * value + (1.0 - self.alpha) * self.previous
+            alpha = (1 - (1 - self.alpha) ** ((timestamp - self.timestamp) * 30)
+                     if self.time_aware else self.alpha)
+            self.previous = alpha * value + (1.0 - alpha) * self.previous
         self.timestamp = timestamp
+        self.last_valid_timestamp = timestamp
         return self.previous.copy()
+
+
+class GazeSignalFilter:
+    """Shared capture/simulation filter for blink recovery and isolated spikes."""
+
+    def __init__(self):
+        self.gaze_smoother = GazeSmoother(time_aware=True, missing_grace=DWELL_GRACE_SECONDS)
+        self.feature_smoother = GazeSmoother(time_aware=True, missing_grace=DWELL_GRACE_SECONDS)
+        self.reset()
+
+    def reset(self):
+        self.gaze_smoother.reset()
+        self.feature_smoother.reset()
+        self.last_raw = None
+        self.last_valid_timestamp = None
+        self.last_timestamp = None
+        self.candidate = None
+
+    def update(self, gaze, features, timestamp):
+        if not np.isfinite(timestamp):
+            self.reset()
+            return None, None, None
+        if self.last_timestamp is not None and timestamp <= self.last_timestamp:
+            return None, None, None
+        self.last_timestamp = timestamp
+        if (self.last_valid_timestamp is not None
+                and timestamp - self.last_valid_timestamp > MAX_GAZE_GAP_SECONDS):
+            self.last_raw = self.candidate = None
+        valid = gaze is not None and features is not None
+        if valid:
+            gaze, features = np.asarray(gaze, dtype=float), np.asarray(features, dtype=float)
+            valid = (gaze.shape == (2,) and features.shape == (FEATURE_DIM,)
+                     and np.isfinite(gaze).all() and np.isfinite(features).all())
+        if valid and self.last_raw is not None:
+            jumped = np.any(np.abs(features - self.last_raw) > FEATURE_JUMP_LIMIT)
+            confirmed = (self.candidate is not None
+                         and np.all(np.abs(features - self.candidate) <= FEATURE_JUMP_LIMIT * .5))
+            if jumped and not confirmed:
+                self.candidate = features.copy()
+                valid = False
+            else:
+                if jumped:
+                    # A confirmed saccade must not carry the old button's EMA
+                    # through dwell completion, especially immediately after a blink.
+                    self.gaze_smoother.reset()
+                    self.feature_smoother.reset()
+                self.candidate = None
+        elif not valid:
+            self.candidate = None
+        if not valid:
+            self.gaze_smoother.update(None, timestamp)
+            self.feature_smoother.update(None, timestamp)
+            return None, None, None
+        self.last_raw = features.copy()
+        self.last_valid_timestamp = timestamp
+        return (self.gaze_smoother.update(gaze, timestamp),
+                self.feature_smoother.update(features, timestamp), features.copy())
 
 
 def ema_series(values, alpha=EMA_ALPHA):

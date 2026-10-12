@@ -147,6 +147,36 @@ class GazeCaptureTests(unittest.TestCase):
         detector.close.assert_called_once()
         camera.release.assert_called_once()
 
+    def test_capture_filters_iris_spikes_and_recovers_after_blinks_without_stale_gaze(self):
+        camera = Mock(error='')
+        camera.thread.is_alive.return_value = False
+        baseline = face_landmarks(PROBE_GAZE)
+        spike = baseline.copy()
+        spike[[468, 473], 0] += 20
+        blink = face_landmarks(PROBE_GAZE, blink=True)
+        landmarks = [baseline, baseline, spike, baseline, blink, blink, baseline, baseline]
+        camera.take.side_effect = [
+            ((np.zeros((480, 640, 3), np.uint8), 100 + i/30), '', 'camera read', 100, 2)
+            for i in range(len(landmarks))
+        ] + [((np.zeros((480, 640, 3), np.uint8), 101), '', 'camera read', 100, 2)]
+        detector = Mock()
+        detector.process.side_effect = [points / [640, 480] for points in landmarks]
+        session = GazeSession(duration=len(landmarks)/30)
+        with patch('gaze_capture.CameraFrames', return_value=camera), \
+                patch('gaze_capture.GazeDetector', return_value=detector), \
+                patch('gaze_capture.time.perf_counter', return_value=100):
+            session.run()
+        self.assertEqual(session.error, '')
+        self.assertEqual(session.reason, 'deadline')
+        for i in (2, 4, 5):
+            self.assertIsNone(session.samples[i]['gaze'])
+            self.assertIsNone(session.samples[i]['features'])
+            self.assertIsNone(session.samples[i]['raw_features'])
+        for i in (3, 6, 7):
+            self.assertTrue(np.allclose(session.samples[i]['features'], tracking_features(baseline)))
+        camera.request_stop.assert_called_once()
+        detector.close.assert_called_once()
+
     def test_process_transport_delivers_ordered_smoothed_gaze_at_over_30fps(self):
         before = {child.pid for child in multiprocessing.active_children()}
         worker = ProcessCaptureWorker(duration=None, process_target=session_probe)

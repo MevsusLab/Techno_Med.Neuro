@@ -53,12 +53,12 @@ def validate_video(path, mode):
         raise ValueError('В метаданных видео отсутствует частота кадров или длительность.')
     # Tremor requires >10s of sampled trajectory; leave room for the final
     # frame being one source interval before a nominal 10s container duration.
-    minimum = {'tremor': 10.5, 'facial': 15.0, 'rppg': 20.0, 'voice': 5.0}[mode]
+    minimum = {'tremor': 10.5, 'facial': 15.0, 'rppg': 20.0, 'voice': 5.0, 'motor': 10.0}[mode]
     if duration < minimum:
         raise ValueError(f'Видео длится {duration:.1f} с; для этого анализа требуется не менее {minimum:g} с.')
     if duration > MAX_VIDEO_SECONDS:
         raise ValueError('Длительность видео превышает ограничение 10 минут.')
-    min_rate = 25.0 if mode == 'tremor' else 15.0
+    min_rate = 25.0 if mode in ('tremor', 'motor') else 15.0
     if fps < min_rate:
         raise ValueError(f'Частота видео {fps:.1f} кадр/с; требуется не менее {min_rate:.0f} кадр/с.')
     return path, fps, frames, duration

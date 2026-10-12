@@ -29,7 +29,7 @@ class RussianTextTests(unittest.TestCase):
             self.assertEqual(window.aac_page.btn_calibrate.text(), 'КАЛИБРОВАТЬ ВЗГЛЯД')
             self.assertEqual(window.aac_page.btn_stop_tracking.text(), 'ОСТАНОВИТЬ ОТСЛЕЖИВАНИЕ')
             for button in (window.tremor_page.btn_video, window.facial_page.upload_video,
-                           window.rppg_page.upload_video):
+                           window.rppg_page.upload_video, window.motor_page.upload_video):
                 self.assertEqual(button.text(), 'ЗАГРУЗИТЬ ВИДЕОФАЙЛ')
             self.assertEqual(window.voice_page.upload.text(), 'ЗАГРУЗИТЬ АУДИОФАЙЛ')
             self.assertEqual(window.aac_page.gaze_x.findChildren(QLabel)[0].text(), 'ВЗГЛЯД ПО ГОРИЗОНТАЛИ')
@@ -37,7 +37,7 @@ class RussianTextTests(unittest.TestCase):
             self.assertEqual(window.aac_page.dwell_display.findChildren(QLabel)[0].text(), 'УДЕРЖАНИЕ ВЗГЛЯДА')
             self.assertEqual(window.tremor_page.page_badge.text(), 'IDLE')
             self.assertEqual([button.text() for button in window.nav.buttons],
-                             ['ОБЗОР', 'ТРЕМОР', 'НЕЙРОМИМИКА', 'ПУЛЬС', 'АЙТРЕКИНГ', 'ГОЛОС'])
+                             ['ОБЗОР', 'ТРЕМОР', 'НЕЙРОМИМИКА', 'ПУЛЬС', 'АЙТРЕКИНГ', 'ГОЛОС', 'МОТОРИКА'])
         finally:
             window.close()
 

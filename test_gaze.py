@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import QApplication
 from aac_speech import SpeechWorker, russian_voice
 from app import AAC_CATEGORIES, AAC_WORDS_PER_SHEET, AACPage, MainWindow
 from gaze_engine import (CALIBRATION_MIN_SAMPLES, DEADZONE_PX, DWELL_GRACE_SECONDS, DwellEngine,
-                         DwellState, GazeSmoother, GazeTargeting, best_effort_sample, calibration_sample,
+                         DwellState, GazeSmoother, GazeSignalFilter, GazeTargeting, best_effort_sample, calibration_sample,
                          fit_gaze_classifier, gaze_features, head_motion_covariance,
                          inconsistent_targets, tracking_features)
 from gaze_simulation import PageDriver, VirtualUser, face_landmarks
@@ -109,6 +109,108 @@ class GazeFeatureTests(unittest.TestCase):
         self.assertIsNone(smoother.update(None, 1.06))
         self.assertTrue(np.allclose(smoother.update([.8, .2], 1.1), [.8, .2]))
         self.assertTrue(np.allclose(smoother.update([.1, .9], 1.6), [.1, .9]))
+
+    def test_lid_and_iris_ratios_are_roll_invariant_even_with_small_eye_opening(self):
+        points = gaze_face(.65, .55)[:, :2]
+        for upper, lower in ((159, 145), (386, 374)):
+            points[upper, 1], points[lower, 1] = 97, 103
+        points[[468, 473], 1] = 100
+        baseline = gaze_features(points)
+        tracking = tracking_features(points)
+        for degrees in (-20, -12, 12, 20):
+            a = np.deg2rad(degrees)
+            rotation = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+            rotated = points @ rotation.T
+            self.assertTrue(np.allclose(gaze_features(rotated), baseline))
+            self.assertTrue(np.allclose(tracking_features(rotated), tracking))
+
+
+class GazeSignalFilterTests(unittest.TestCase):
+    def test_one_frame_spike_never_enters_raw_calibration_or_smoothing(self):
+        signal = GazeSignalFilter()
+        signal.update([.5, .5], GRID[0], 1)
+        jump = GRID[0] + [.3, .2, 0, 0]
+        self.assertEqual(signal.update([.9, .9], jump, 1.03), (None, None, None))
+        gaze, features, raw = signal.update([.5, .5], GRID[0], 1.06)
+        self.assertTrue(np.allclose(gaze, [.5, .5]))
+        self.assertTrue(np.allclose(features, GRID[0]))
+        self.assertTrue(np.allclose(raw, GRID[0]))
+
+    def test_real_saccade_is_accepted_after_confirmation_then_reaches_new_target(self):
+        signal = GazeSignalFilter()
+        model = fit_gaze_classifier(target_windows(GRID, np.random.default_rng(20)))
+        signal.update([.5, .5], GRID[0], 1)
+        self.assertEqual(signal.update([.6, .5], GRID[1], 1 + 1/30), (None, None, None))
+        _, features, raw = signal.update([.6, .5], GRID[1], 1 + 2/30)
+        self.assertTrue(np.allclose(raw, GRID[1]))
+        for frame in range(3, 11):
+            _, features, _ = signal.update([.6, .5], GRID[1], 1 + frame/30)
+        self.assertEqual(model.classify(features), 1)
+
+    def test_blink_preserves_history_but_never_returns_held_features(self):
+        signal = GazeSignalFilter()
+        signal.update([.5, .5], GRID[0], 1)
+        for frame in range(1, 5):
+            self.assertEqual(signal.update(None, None, 1 + frame/30), (None, None, None))
+        _, features, _ = signal.update([.52, .5], GRID[0] + [.01, 0, 0, 0], 1 + 5/30)
+        self.assertGreater(features[0], GRID[0, 0])
+        self.assertLess(features[0], GRID[0, 0] + .005)
+        self.assertEqual(signal.update(None, None, 1.5), (None, None, None))
+        _, features, _ = signal.update([.8, .5], GRID[1], 1.6)
+        self.assertTrue(np.allclose(features, GRID[1]))
+
+    def test_time_based_ema_has_same_response_at_different_fps(self):
+        values = []
+        for fps in (15, 20, 30, 60):
+            smoother = GazeSmoother(time_aware=True)
+            smoother.update([0, 0], 0)
+            for frame in range(1, int(.4 * fps) + 1):
+                value = smoother.update([1, 1], frame/fps)
+            values.append(value)
+        self.assertTrue(np.allclose(values, values[0]))
+
+    def test_invalid_duplicate_and_nonfinite_samples_do_not_modify_filter(self):
+        signal = GazeSignalFilter()
+        signal.update([.5, .5], GRID[0], 1)
+        self.assertEqual(signal.update([.9, .9], GRID[1], 1), (None, None, None))
+        self.assertEqual(signal.update([np.nan, .5], GRID[0], 1.03), (None, None, None))
+        _, features, _ = signal.update([.5, .5], GRID[0], 1.06)
+        self.assertTrue(np.allclose(features, GRID[0]))
+        self.assertEqual(signal.update([.5, .5], GRID[0], np.nan), (None, None, None))
+
+    def test_spikes_during_three_second_fixation_allow_only_correct_selections(self):
+        signal = GazeSignalFilter()
+        model = fit_gaze_classifier(target_windows(GRID, np.random.default_rng(1)))
+        dwell = DwellEngine()
+        rectangles = {i: (i * 120, 0, i * 120 + 100, 100) for i in range(4)}
+        selected = []
+        for frame in range(90):
+            value = GRID[0] + ([.3, 0, 0, 0] if frame % 12 == 6 else np.zeros(4))
+            _, features, _ = signal.update([.5, .5], value, frame/30)
+            index = model.classify(features, dwell.target) if features is not None else None
+            point = [index * 120 + 50, 50] if index is not None else None
+            update = dwell.update(point, rectangles, frame/30, missing=features is None)
+            if update.triggered is not None:
+                selected.append(update.triggered)
+        self.assertEqual(selected, [0, 0])
+
+    def test_looking_at_new_target_after_blink_cannot_complete_previous_target(self):
+        signal = GazeSignalFilter()
+        model = fit_gaze_classifier(target_windows(GRID, np.random.default_rng(1)))
+        dwell = DwellEngine()
+        rectangles = {i: (i * 120, 0, i * 120 + 100, 100) for i in range(4)}
+        selected = []
+        for frame in range(65):
+            value = GRID[0] if frame < 24 else GRID[1]
+            missing = frame in (24, 25, 26)
+            _, features, _ = signal.update(None if missing else [.5, .5],
+                                           None if missing else value, frame/30)
+            index = model.classify(features, dwell.target) if features is not None else None
+            point = [index * 120 + 50, 50] if index is not None else None
+            update = dwell.update(point, rectangles, frame/30, missing=features is None)
+            if update.triggered is not None:
+                selected.append(update.triggered)
+        self.assertEqual(selected, [1])
 
 
 class CalibrationEngineTests(unittest.TestCase):
@@ -545,6 +647,47 @@ class AACPageTests(unittest.TestCase):
             self.page._poll()
         self.assertIsNone(self.page.current_target)
         self.assertEqual(self.page.gaze_x.val.text(), '---')
+
+    def test_backlogged_or_duplicate_packets_cannot_fire_stale_dwell(self):
+        driver = self.calibrated(30)
+        worker = Mock()
+        self.page.worker = worker
+        self.addCleanup(lambda: setattr(self.page, 'worker', None))
+        self.page.dwell_engine.reset()
+        samples = [driver.user.sample(driver.centers()[2]) for _ in range(60)]
+        worker.take_pending.return_value = (None, samples)
+        with patch.object(self.page, '_activate_target') as activate:
+            self.page._poll()
+            activate.assert_not_called()
+            self.assertLessEqual(int(self.page.dwell_display.val.text()), 210)
+            # Old latest-frame fallback doesn't count as a fresh arrival.
+            arrival = self.page.last_sample_arrival
+            image = np.zeros((240, 320, 3), np.uint8)
+            worker.take_pending.return_value = ({'image': image, **samples[-1]}, [])
+            with patch('app.time.perf_counter', return_value=arrival + 1):
+                self.page._poll()
+            self.assertIsNone(self.page.current_target)
+            self.assertIsNone(self.page.last_sample_arrival)
+            activate.assert_not_called()
+
+    def test_noisy_blinking_spiky_fixations_select_all_targets_at_multiple_frame_rates(self):
+        for fps in (20, 30, 60):
+            with self.subTest(fps=fps):
+                self.page._begin_calibration_state()
+                self.page.frames_seen = True
+                driver = PageDriver(self.page, VirtualUser(40, fps=fps, noise=.55, micro_motion=.2))
+                driver.calibrate(blink_every=round(fps * 1.5))
+                driver.user.drift(1.0)
+                buttons = self.page._calibration_buttons()
+                for index in (2, 5, 0, 3, 1, 4):
+                    self.page.dwell_engine.reset()
+                    with patch.object(self.page, '_activate_target') as activate:
+                        for frame in range(round(1.8 * fps)):
+                            cycle = frame % round(fps * .6)
+                            driver.frame(driver.centers()[index], blink=cycle in (0, 1),
+                                         iris_spike=[10, 0] if cycle == round(fps * .3) else None,
+                                         roll=12 * np.sin(frame / fps))
+                        self.assertEqual([call.args[0] for call in activate.call_args_list], [buttons[index]])
 
     def test_resize_and_category_change_during_calibration_keep_completed_buttons(self):
         self.page._begin_calibration_state()
