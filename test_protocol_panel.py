@@ -83,18 +83,18 @@ class ProtocolPanelTests(unittest.TestCase):
 
     def test_metric_branch_boundaries_are_non_diagnostic(self):
         for f, concentration, rms, title in [
-            (5, 49.9, 0.5, 'LOW MEASURED'), (5, 80, 0.19, 'LOW MEASURED'),
-            (None, 80, 0.5, 'NO CLEAR'), (3.99, 80, 0.5, 'LOW-FREQUENCY'),
-            (4, 50, 0.2, '4.0-6.5'), (6.49, 80, 0.5, '4.0-6.5'),
-            (6.5, 80, 0.5, '6.5-12.5'), (12.5, 80, 0.5, '6.5-12.5'),
+            (5, 49.9, 0.5, 'НЕВЫРАЖЕННЫЙ'), (5, 80, 0.19, 'СЛАБОЕ'),
+            (None, 80, 0.5, 'ЧЁТКИЙ ПИК'), (3.99, 80, 0.5, 'НИЗКОЧАСТОТНОЕ'),
+            (4, 50, 0.2, '4,0–6,5'), (6.49, 80, 0.5, '4,0–6,5'),
+            (6.5, 80, 0.5, '6,5–12,5'), (12.5, 80, 0.5, '6,5–12,5'),
         ]:
             with self.subTest(f=f):
                 text = protocol_text({'dominant_freq': f, 'concentration': concentration, 'rms_px': rms, 'max_freq': 4.8})
                 self.assertIn(title, text[0])
-                self.assertIn('above this range were not assessed', text[3])
+                self.assertIn('не оценивались', text[3])
                 self.assertNotIn('NORMAL', text[0])
 
-    def test_text_and_pdf_exports_include_disclaimer_and_metrics(self):
+    def test_text_and_pdf_exports_include_metrics_and_interpretation(self):
         self.complete()
         with tempfile.TemporaryDirectory() as directory:
             text = Path(directory) / 'report.txt'
@@ -102,8 +102,10 @@ class ProtocolPanelTests(unittest.TestCase):
             with patch('protocol_panel.QFileDialog.getSaveFileName', return_value=(str(text), '')):
                 self.page.protocol_panel.save_button.click()
             report = text.read_text(encoding='utf-8')
-            self.assertIn('СКЗ движения:', report)
-            self.assertIn('ОГРАНИЧЕНИЕ:', report)
+            self.assertIn('Среднеквадратичное смещение кисти:', report)
+            self.assertNotIn('РЕКОМЕНДАЦИИ', report)
+            self.assertNotIn('ОГРАНИЧЕНИЕ:', report)
+            self.assertTrue(report.rstrip().endswith(self.page.protocol_panel.action_label.text()))
             with patch('protocol_panel.QFileDialog.getSaveFileName', return_value=(str(pdf), '')):
                 self.page.protocol_panel.export_button.click()
             self.assertTrue(pdf.read_bytes().startswith(b'%PDF-'))

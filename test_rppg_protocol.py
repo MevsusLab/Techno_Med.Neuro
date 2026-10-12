@@ -82,10 +82,10 @@ class RPPGProtocolTests(unittest.TestCase):
 
     def test_rate_and_quality_threshold_boundaries(self):
         for bpm, concentration, coverage, spread, expected in [
-            (67, 82.6, 0.91, 3, '60-95 BPM'), (59, 80, 0.9, 2, 'LOWER'),
-            (60, 60, 0.7, 5, '60-95 BPM'), (95, 80, 0.9, 2, '60-95 BPM'),
-            (95.1, 80, 0.9, 2, 'ELEVATED'), (67, 59.9, 0.9, 2, 'UNRELIABLE'),
-            (67, 80, 0.699, 2, 'UNRELIABLE'), (67, 80, 0.9, 5.1, 'UNRELIABLE'),
+            (67, 82.6, 0.91, 3, 'В ДИАПАЗОНЕ 60–95'), (59, 80, 0.9, 2, 'НИЖЕ 60'),
+            (60, 60, 0.7, 5, 'В ДИАПАЗОНЕ 60–95'), (95, 80, 0.9, 2, 'В ДИАПАЗОНЕ 60–95'),
+            (95.1, 80, 0.9, 2, 'ВЫШЕ 95'), (67, 59.9, 0.9, 2, 'НЕНАДЁЖНО'),
+            (67, 80, 0.699, 2, 'НЕНАДЁЖНО'), (67, 80, 0.9, 5.1, 'НЕНАДЁЖНО'),
         ]:
             with self.subTest(bpm=bpm, concentration=concentration, coverage=coverage, spread=spread):
                 result = {'bpm': bpm, 'concentration': concentration, 'coverage': coverage,
@@ -94,10 +94,10 @@ class RPPGProtocolTests(unittest.TestCase):
                 self.assertIn(expected, title)
                 self.assertNotIn('[NORMAL]', title)
                 self.assertNotIn('DETECTED', title)
-                self.assertIn('unvalidated', limits)
-                self.assertIn('urgent medical help', actions)
+                self.assertIn('исследовательские', limits)
+                self.assertIn('срочно обратитесь за медицинской помощью', actions)
 
-    def test_text_and_pdf_exports_include_quality_and_disclaimer(self):
+    def test_text_and_pdf_exports_include_quality_and_interpretation(self):
         self.complete(drift=True)
         panel = self.page.protocol_panel
         with tempfile.TemporaryDirectory() as directory:
@@ -109,7 +109,9 @@ class RPPGProtocolTests(unittest.TestCase):
             self.assertIn('Предварительная оценка пульса:', report)
             self.assertIn('Разброс всех ROI:', report)
             self.assertIn('медленное смещение головы', report)
-            self.assertIn('ОГРАНИЧЕНИЕ:', report)
+            self.assertNotIn('РЕКОМЕНДАЦИИ', report)
+            self.assertNotIn('ОГРАНИЧЕНИЕ:', report)
+            self.assertTrue(report.rstrip().endswith(panel.action_label.text()))
             with patch('protocol_panel.QFileDialog.getSaveFileName', return_value=(str(pdf), '')):
                 panel.export_button.click()
             self.assertTrue(pdf.read_bytes().startswith(b'%PDF-'))

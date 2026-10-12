@@ -215,8 +215,8 @@ class VoiceCaptureTests(unittest.TestCase):
                 report = text.read_text(encoding='utf-8')
                 self.assertIn('sample.wav', report)
                 self.assertIn('Исходный аудиофайл:', report)
-                self.assertIn('2.50', report)
-                self.assertIn('12.00', report)
+                self.assertIn('2,50', report)
+                self.assertIn('12,00', report)
         finally:
             page.cleanup()
             page.deleteLater()

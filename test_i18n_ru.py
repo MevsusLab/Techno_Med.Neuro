@@ -28,6 +28,10 @@ class RussianTextTests(unittest.TestCase):
             self.assertEqual(window.aac_page.btn_tracking.text(), 'НАЧАТЬ ОТСЛЕЖИВАНИЕ ВЗГЛЯДА')
             self.assertEqual(window.aac_page.btn_calibrate.text(), 'КАЛИБРОВАТЬ ВЗГЛЯД')
             self.assertEqual(window.aac_page.btn_stop_tracking.text(), 'ОСТАНОВИТЬ ОТСЛЕЖИВАНИЕ')
+            for button in (window.tremor_page.btn_video, window.facial_page.upload_video,
+                           window.rppg_page.upload_video):
+                self.assertEqual(button.text(), 'ЗАГРУЗИТЬ ВИДЕОФАЙЛ')
+            self.assertEqual(window.voice_page.upload.text(), 'ЗАГРУЗИТЬ АУДИОФАЙЛ')
             self.assertEqual(window.aac_page.gaze_x.findChildren(QLabel)[0].text(), 'ВЗГЛЯД ПО ГОРИЗОНТАЛИ')
             self.assertEqual(window.aac_page.gaze_y.findChildren(QLabel)[0].text(), 'ВЗГЛЯД ПО ВЕРТИКАЛИ')
             self.assertEqual(window.aac_page.dwell_display.findChildren(QLabel)[0].text(), 'УДЕРЖАНИЕ ВЗГЛЯДА')
@@ -48,16 +52,16 @@ class RussianTextTests(unittest.TestCase):
         for frequency in (None, 1.2, 5, 8, 13):
             content = protocol_text({'dominant_freq': frequency, 'concentration': 80, 'rms_px': 1, 'max_freq': 12})
             for value in content:
-                self.assertNotEqual(ru(value), value)
+                self.assertRegex(value, '[А-Яа-я]')
         for asi, smile, brow in ((2, 5, 2), (10, 15, 5), (17, 30, 5), (17, 30, 20)):
             content = facial_protocol_text({'asymmetry_index': asi, 'smile_imbalance': smile, 'brow_imbalance': brow})
             for value in content:
-                self.assertNotEqual(ru(value), value)
+                self.assertRegex(value, '[А-Яа-я]')
         for bpm, concentration in ((67, 40), (55, 80), (67, 80), (110, 80)):
             content = rppg_protocol_text({'bpm': bpm, 'concentration': concentration, 'coverage': 0.91, 'roi_bpm': [bpm]*3, 'warnings': []})
             for value in content:
-                self.assertNotEqual(ru(value), value)
-            self.assertNotIn('Seek urgent medical help', ru(content[2]))
+                self.assertRegex(value, '[А-Яа-я]')
+            self.assertNotIn('Seek', ru(content[2]))
         self.assertIn('Непрерывно тяните', ru('Sustain Ah continuously. Keep volume and microphone distance steady.'))
 
 

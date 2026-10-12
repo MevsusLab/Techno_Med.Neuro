@@ -1,4 +1,5 @@
 import sys
+import os
 import time
 import traceback
 import numpy as np
@@ -22,8 +23,10 @@ from facial_engine import analyze_stage, compare_stages, PAIRS
 from rppg_capture import RPPGCaptureWorker
 from rppg_engine import RPPGEngine
 from voice_capture import VoiceCaptureWorker, VoiceFileCaptureWorker
-from voice_dependencies import check_voice_dependencies
+from voice_dependencies import check_voice_dependencies, check_voice_file_dependencies
 from gaze_capture import GazeCaptureWorker
+from video_capture import VideoCaptureWorker, VIDEO_FILTER
+from video_capture import check_video_audio_dependency
 from gaze_engine import (DwellEngine, DwellState, GazeTargeting, fit_gaze_classifier,
                          inconsistent_targets, calibration_sample, best_effort_sample,
                          DWELL_THRESHOLD_MS, COOLDOWN_MS, FEATURE_DIM,
@@ -384,10 +387,6 @@ class StatusBar(QWidget):
             self.badges[name] = badge
             lay.addLayout(row)
         lay.addStretch()
-        ts = QLabel("MevsusLab / NDTP")
-        ts.setFont(f_mono(7))
-        ts.setStyleSheet(f"color: {TEXT_MUTED}; border: none;")
-        lay.addWidget(ts)
 
     def update_badge(self, name, text, color):
         if name in self.badges:
@@ -560,6 +559,9 @@ class TremorPage(QWidget):
         self._failure = ""
         self._closing = False
         self._deadline_requested = False
+        self._source_kind = 'camera'
+        self._source_path = ''
+        self._video_elapsed = 0.0
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._on_frame)
 
@@ -611,12 +613,16 @@ class TremorPage(QWidget):
         controls.setSpacing(6)
         self.btn_start = cmd_button("START CAPTURE")
         self.btn_start.clicked.connect(lambda checked=False: self._start())
+        self.btn_video = cmd_button('UPLOAD VIDEO FILE', primary=False)
+        self.btn_video.setToolTip('Видео: неподвижная кисть в кадре не менее 10,5 секунд; предпочтительно 15 секунд, 25 кадр/с и выше.')
+        self.btn_video.clicked.connect(self._upload_video)
         self.btn_stop = cmd_button("STOP", primary=False)
         self.btn_stop.clicked.connect(lambda checked=False: self._stop())
         self.btn_stop.setEnabled(False)
         self.btn_reset = cmd_button("RESET", primary=False)
         self.btn_reset.clicked.connect(lambda checked=False: self._reset())
         controls.addWidget(self.btn_start)
+        controls.addWidget(self.btn_video)
         controls.addWidget(self.btn_stop)
         controls.addWidget(self.btn_reset)
         left.addLayout(controls)
@@ -666,19 +672,38 @@ class TremorPage(QWidget):
         layout.addLayout(body)
 
     def _start(self):
+        self._start_source()
+
+    def _upload_video(self):
+        if self.worker is not None or self._closing:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, 'Выберите видеофайл с неподвижной рукой', '',
+            VIDEO_FILTER)
+        if path:
+            self._start_source(path)
+
+    def _start_source(self, video_path=None):
         if self.worker is not None or self._closing:
             return
         self._reset()
+        self._source_kind = 'video' if video_path else 'camera'
+        self._source_path = video_path or ''
+        self._video_elapsed = 0.0
         self._analyze_on_finish = True
-        self.worker = CaptureWorker(self.record_duration, self)
+        self.worker = (VideoCaptureWorker(video_path, 'tremor', self) if video_path
+                       else CaptureWorker(self.record_duration, self))
         self.worker.status.connect(self._on_status)
         self.worker.failed.connect(self._on_failure)
         self.worker.finished.connect(self._on_finished)
         self.btn_start.setEnabled(False)
+        self.btn_video.setEnabled(False)
         self.btn_stop.setEnabled(True)
         set_badge(self.page_badge, "STARTING", AMBER)
         set_badge(self.analysis_badge, "WAITING", TEXT_MUTED)
-        self.info_label.setText("Starting model and camera...")
+        self.info_label.setText('Обработка видеофайла…' if video_path else 'Starting model and camera...')
+        if video_path:
+            self.analysis_detail.setText(f'Видео: {os.path.basename(video_path)}')
         if self.status_bar:
             self.status_bar.update_badge("MEDIAPIPE", "STARTING", AMBER)
         self.timer.start(30)
@@ -688,7 +713,7 @@ class TremorPage(QWidget):
         if self.worker is None:
             return
         if self._stop_time is None:
-            self._stop_time = time.perf_counter()
+            self._stop_time = self._video_elapsed if self._source_kind == 'video' else time.perf_counter()
         self._analyze_on_finish = analyze and not self._failure and not self._closing
         self.recording = False
         self.btn_stop.setEnabled(False)
@@ -710,6 +735,9 @@ class TremorPage(QWidget):
         self._analyze_on_finish = False
         self._failure = ""
         self._deadline_requested = False
+        self._source_kind = 'camera'
+        self._source_path = ''
+        self._video_elapsed = 0.0
         self.engine.reset()
         self.progress.setValue(0)
         self.info_label.setText("Samples: 0  |  FPS: --  |  0.0s / 15.0s")
@@ -723,6 +751,7 @@ class TremorPage(QWidget):
         set_badge(self.page_badge, "IDLE", TEXT_MUTED)
         set_badge(self.analysis_badge, "WAITING", TEXT_MUTED)
         self.btn_start.setEnabled(self.worker is None and not self._closing)
+        self.btn_video.setEnabled(self.worker is None and not self._closing)
         self.btn_stop.setEnabled(False)
         if self.status_bar:
             self.status_bar.update_badge("CAM", "DISCONNECTED", TEXT_MUTED)
@@ -779,6 +808,8 @@ class TremorPage(QWidget):
         if start is not None:
             self.record_start = start
             self.record_end = end
+            if self._source_kind == 'video' and end is not None and end > start:
+                self.record_duration = end - start
             self.recording = self._stop_time is None and not self.worker.isInterruptionRequested()
             if self.recording:
                 set_badge(self.page_badge, "RECORDING", GREEN)
@@ -786,14 +817,20 @@ class TremorPage(QWidget):
                 self.analysis_detail.setText("Recording. Keep the hand fully visible until capture finishes.")
         old_count = self.frame_count
         for acquired, x, y in samples:
-            if self._stop_time is not None and acquired > self._stop_time:
+            if (self._stop_time is not None and self._source_kind == 'camera'
+                    and acquired > self._stop_time):
                 continue
             self.frame_count += 1
             if x is not None and y is not None:
                 self.engine.add_sample(x, y, acquired)
         now = time.perf_counter()
+        if self._source_kind == 'video' and latest is not None:
+            self._video_elapsed = max(self._video_elapsed, float(latest[1]))
+            self.record_start = 0.0
+            self.record_end = max(self.record_end or 0.0, float(latest[1]))
         if self.record_start is not None:
-            current = self._stop_time if self._stop_time is not None else now
+            current = (self._stop_time if self._stop_time is not None else
+                       self._video_elapsed if self._source_kind == 'video' else now)
             elapsed = min(max(current - self.record_start, 0), self.record_duration)
             self.progress.setValue(int(elapsed / self.record_duration * 100))
             fps_est = self.frame_count / max(elapsed, 0.001)
@@ -804,7 +841,7 @@ class TremorPage(QWidget):
             )
             if self.frame_count // 15 > old_count // 15 and self.engine.count > 10:
                 self._update_live_wave()
-        if self._stop_time is None and not self.worker.isInterruptionRequested():
+        if self._source_kind == 'camera' and self._stop_time is None and not self.worker.isInterruptionRequested():
             if read_wait is not None and now - read_wait > read_timeout:
                 self._on_failure("Camera stopped delivering frames")
                 return
@@ -834,6 +871,7 @@ class TremorPage(QWidget):
             self.recording = False
             self.worker = None
             self.btn_start.setEnabled(not self._closing)
+            self.btn_video.setEnabled(not self._closing)
             self.btn_stop.setEnabled(False)
             worker.deleteLater()
             if self.status_bar:
@@ -952,6 +990,9 @@ class TremorPage(QWidget):
             f"Resolution: {results['resolution_hz']:.2f} Hz  |  "
             f"Max gap: {results['max_gap_sec']:.3f}s  |  Band: 1-{results['max_freq']:.1f} Hz"
         )
+        if self._source_kind == 'video':
+            self.info_label.setText(f'Видео: {os.path.basename(self._source_path)}  |  ' + self.info_label.text())
+            self.analysis_detail.setText('Источник: видеофайл. ' + self.analysis_detail.text())
 
         set_badge(self.page_badge, "LIMITED BAND" if limited else "COMPLETE", AMBER if limited else GREEN)
         set_badge(self.analysis_badge, "LIMITED BAND" if limited else "COMPLETE", AMBER if limited else GREEN)
@@ -960,6 +1001,9 @@ class TremorPage(QWidget):
 
         self._plot_psd(results)
         self._plot_waveform(results)
+        if self._source_kind == 'video':
+            results['source'] = 'video'
+            results['source_file'] = os.path.basename(self._source_path)
         self.protocol_panel.set_results(results)
         self.protocol_panel.show()
 
@@ -1012,6 +1056,7 @@ class TremorPage(QWidget):
         self._stop(analyze=False)
         self.timer.stop()
         self.btn_start.setEnabled(False)
+        self.btn_video.setEnabled(False)
         self.btn_reset.setEnabled(False)
         return self.worker is None
 
@@ -1029,6 +1074,8 @@ class FacialPage(QWidget):
         self.stage_rejected = {}
         self.cancelled = False
         self.closing = False
+        self.source_kind = 'camera'
+        self.source_path = ''
         self.results = None
         self.preview_seen = False
         self.timer = QTimer(self)
@@ -1045,11 +1092,6 @@ class FacialPage(QWidget):
         self.badge = make_status_badge("IDLE", TEXT_MUTED)
         header.addWidget(self.badge)
         layout.addLayout(header)
-        sub = QLabel("Sudden facial droop, arm weakness or speech difficulty: seek emergency help immediately. Do not wait for this test.")
-        sub.setFont(f_mono(9, True))
-        sub.setStyleSheet(f"color: {RED};")
-        sub.setWordWrap(True)
-        layout.addWidget(sub)
         body = QHBoxLayout()
         body.setSpacing(8)
         left = QVBoxLayout()
@@ -1077,13 +1119,17 @@ class FacialPage(QWidget):
         controls = QHBoxLayout()
         controls.setSpacing(6)
         self.start = cmd_button('START FACIAL TEST')
+        self.upload_video = cmd_button('UPLOAD VIDEO FILE', primary=False)
+        self.upload_video.setToolTip('Видео 15 секунд: покой 0–5 с, улыбка 5–10 с, поднятие бровей 10–15 с.')
         self.stop = cmd_button('STOP', primary=False)
         self.reset = cmd_button('RESET', primary=False)
         self.start.clicked.connect(self._start)
+        self.upload_video.clicked.connect(self._upload_video)
         self.stop.clicked.connect(self._stop)
         self.reset.clicked.connect(self._reset)
         self.stop.setEnabled(False)
         controls.addWidget(self.start)
+        controls.addWidget(self.upload_video)
         controls.addWidget(self.stop)
         controls.addWidget(self.reset)
         left.addLayout(controls)
@@ -1139,17 +1185,34 @@ class FacialPage(QWidget):
         layout.addLayout(body)
 
     def _start(self):
+        self._start_source()
+
+    def _upload_video(self):
+        if self.worker is not None or self.closing:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, 'Выберите подготовленный видеофайл', '',
+            VIDEO_FILTER)
+        if path:
+            self._start_source(path)
+
+    def _start_source(self, video_path=None):
         if self.worker is not None or self.closing:
             return
         self._reset()
-        self.worker = FaceCaptureWorker(self)
+        self.source_kind = 'video' if video_path else 'camera'
+        self.source_path = video_path or ''
+        self.worker = (VideoCaptureWorker(video_path, 'facial', self) if video_path
+                       else FaceCaptureWorker(self))
         self.worker.finished.connect(self._finished)
         self.worker.failed.connect(self._capture_failed)
         self.worker.status.connect(self._capture_status)
         self.start.setEnabled(False)
+        self.upload_video.setEnabled(False)
         self.stop.setEnabled(True)
         set_badge(self.badge, 'STARTING', AMBER)
-        self.guidance.setText('Starting camera and face model. First run may download the model.')
+        self.guidance.setText(('Видео: нейтральное лицо 0–5 с, улыбка 5–10 с, поднятые брови 10–15 с.'
+                               if video_path else 'Starting camera and face model. First run may download the model.'))
         if self.status_bar:
             self.status_bar.update_badge('MEDIAPIPE', 'STARTING', AMBER)
         self.timer.start(40)
@@ -1164,6 +1227,8 @@ class FacialPage(QWidget):
 
     def _reset(self):
         self._stop()
+        self.source_kind = 'camera'
+        self.source_path = ''
         self.protocol_panel.clear()
         self.samples = []
         self.stage_bounds = {}
@@ -1182,6 +1247,7 @@ class FacialPage(QWidget):
         self.verdict.setText('Percentage of eye-corner span; not a probability of paresis or stroke.')
         self.verdict.setStyleSheet(f'color: {TEXT_DIM}; border: none;')
         self.start.setEnabled(self.worker is None and not self.closing)
+        self.upload_video.setEnabled(self.worker is None and not self.closing)
         self.stop.setEnabled(False)
         set_badge(self.badge, 'IDLE', TEXT_MUTED)
         if self.worker is None:
@@ -1226,7 +1292,7 @@ class FacialPage(QWidget):
             image = latest['image']
             h, w = image.shape[:2]
             self.video.setPixmap(QPixmap.fromImage(QImage(image.data, w, h, image.strides[0], QImage.Format.Format_RGB888)))
-            if self.status_bar:
+            if self.status_bar and self.source_kind == 'camera':
                 self.status_bar.update_badge('CAM', 'ACTIVE', GREEN)
                 self.status_bar.update_badge('MEDIAPIPE', 'FACE LOADED', GREEN)
 
@@ -1255,6 +1321,9 @@ class FacialPage(QWidget):
                     except ValueError as exc:
                         raise ValueError(stage.upper() + ': ' + str(exc)) from exc
                 result = compare_stages(stages['rest'], stages['smile'], stages['brows'])
+                if self.source_kind == 'video':
+                    result['source'] = 'video'
+                    result['source_file'] = os.path.basename(self.source_path)
                 self.results = result
                 self.index.set_value(f"{result['asymmetry_index']:.2f}")
                 self.mouth.set_value(f"{result['smile_imbalance']:.1f}")
@@ -1270,6 +1339,8 @@ class FacialPage(QWidget):
                     'Complete. Valid frames: ' + ' / '.join(f"{name}: {stages[name]['samples']}" for name in stages)
                     + '. Geometric percentages are not clinical risk scores.'
                 )
+                if self.source_kind == 'video':
+                    self.guidance.setText(f'Видео: {os.path.basename(self.source_path)}. ' + self.guidance.text())
                 self.verdict.setText('Measurements complete. Percentage of eye-corner span; not a probability of paresis or stroke.')
                 self.video.setText('RECORDING COMPLETE / SEE RESULTS')
                 self.protocol_panel.set_results(result)
@@ -1299,6 +1370,7 @@ class FacialPage(QWidget):
             self.worker = None
             worker.deleteLater()
             self.start.setEnabled(not self.closing)
+            self.upload_video.setEnabled(not self.closing)
             self.stop.setEnabled(False)
             if self.status_bar:
                 self.status_bar.update_badge('CAM', 'DISCONNECTED', TEXT_MUTED)
@@ -1338,6 +1410,7 @@ class FacialPage(QWidget):
         self.closing = True
         self._stop()
         self.start.setEnabled(False)
+        self.upload_video.setEnabled(False)
         self.reset.setEnabled(False)
         return self.worker is None
 
@@ -1354,6 +1427,8 @@ class RPPGPage(QWidget):
         self.closing = False
         self.frames = 0
         self.last_wave = 0
+        self.source_kind = 'camera'
+        self.source_path = ''
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._poll)
         layout = QVBoxLayout(self)
@@ -1397,13 +1472,17 @@ class RPPGPage(QWidget):
         controls = QHBoxLayout()
         controls.setSpacing(6)
         self.start = cmd_button('START MEASUREMENT')
+        self.upload_video = cmd_button('UPLOAD VIDEO FILE', primary=False)
+        self.upload_video.setToolTip('Видео спокойного лица, лоб и обе щеки видны, не менее 20 секунд; предпочтительно 30 секунд.')
         self.stop = cmd_button('STOP', primary=False)
         self.reset = cmd_button('RESET', primary=False)
         self.start.clicked.connect(self._start)
+        self.upload_video.clicked.connect(self._upload_video)
         self.stop.clicked.connect(self._stop)
         self.reset.clicked.connect(self._reset)
         self.stop.setEnabled(False)
         controls.addWidget(self.start)
+        controls.addWidget(self.upload_video)
         controls.addWidget(self.stop)
         controls.addWidget(self.reset)
         left.addLayout(controls)
@@ -1442,6 +1521,8 @@ class RPPGPage(QWidget):
             self._stop()
         else:
             self.cancelled = False
+        self.source_kind = 'camera'
+        self.source_path = ''
         self.engine.reset()
         self.frames = 0
         self.last_wave = 0
@@ -1457,20 +1538,38 @@ class RPPGPage(QWidget):
         set_badge(self.badge, 'IDLE', TEXT_MUTED)
         set_badge(self.analysis_badge, 'WAITING', TEXT_MUTED)
         self.start.setEnabled(self.worker is None and not self.closing)
+        self.upload_video.setEnabled(self.worker is None and not self.closing)
         self.stop.setEnabled(False)
 
     def _start(self):
+        self._start_source()
+
+    def _upload_video(self):
+        if self.worker is not None or self.closing:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, 'Выберите видеофайл спокойного лица', '',
+            VIDEO_FILTER)
+        if path:
+            self._start_source(path)
+
+    def _start_source(self, video_path=None):
         if self.worker is not None or self.closing:
             return
         self._reset()
-        self.worker = RPPGCaptureWorker(self)
+        self.source_kind = 'video' if video_path else 'camera'
+        self.source_path = video_path or ''
+        self.worker = (VideoCaptureWorker(video_path, 'rppg', self) if video_path
+                       else RPPGCaptureWorker(self))
         self.worker.finished.connect(self._finished)
         self.worker.failed.connect(self._failed)
         self.worker.status.connect(self._status)
         self.start.setEnabled(False)
+        self.upload_video.setEnabled(False)
         self.stop.setEnabled(True)
         set_badge(self.badge, 'STARTING', AMBER)
-        self.guidance.setText('Starting the face model and camera; prepare for a 30-second resting capture.')
+        self.guidance.setText(('Обработка первых 30 секунд видео: смотрите прямо в камеру и оставайтесь неподвижны.'
+                               if video_path else 'Starting the face model and camera; prepare for a 30-second resting capture.'))
         if self.status_bar:
             self.status_bar.update_badge('DSP', 'STANDBY', TEXT_MUTED)
         self.timer.start(40)
@@ -1516,7 +1615,7 @@ class RPPGPage(QWidget):
             image = latest['image']
             h, w = image.shape[:2]
             self.video.setPixmap(QPixmap.fromImage(QImage(image.data, w, h, image.strides[0], QImage.Format.Format_RGB888)))
-            if self.status_bar:
+            if self.status_bar and self.source_kind == 'camera':
                 self.status_bar.update_badge('CAM', 'ACTIVE', GREEN)
                 self.status_bar.update_badge('MEDIAPIPE', 'FACE LOADED', GREEN)
         if len(self.engine.samples) > 10 and time.perf_counter() - self.last_wave > 0.7:
@@ -1546,6 +1645,8 @@ class RPPGPage(QWidget):
                 if result is None:
                     raise ValueError(self.engine.last_error)
                 self._render(result)
+                if self.source_kind == 'video':
+                    self.detail.setText(f'Видео: {os.path.basename(self.source_path)}. ' + self.detail.text())
             else:
                 set_badge(self.badge, 'IDLE', TEXT_MUTED)
                 self.video.setText('MEASUREMENT CANCELLED')
@@ -1567,6 +1668,7 @@ class RPPGPage(QWidget):
             self.worker = None
             worker.deleteLater()
             self.start.setEnabled(not self.closing)
+            self.upload_video.setEnabled(not self.closing)
             self.stop.setEnabled(False)
             if self.status_bar:
                 self.status_bar.update_badge('CAM', 'DISCONNECTED', TEXT_MUTED)
@@ -1603,6 +1705,8 @@ class RPPGPage(QWidget):
         set_badge(self.badge, 'CHECK QUALITY' if warnings else 'COMPLETE', AMBER if warnings else GREEN)
         set_badge(self.analysis_badge, 'ESTIMATE / CAUTION' if warnings else 'ACCEPTED', AMBER if warnings else GREEN)
         self.guidance.setText('Measurement complete. A camera-derived pulse estimate needs validation against a reference sensor.')
+        if self.source_kind == 'video':
+            self.guidance.setText(f'Источник: видеофайл {os.path.basename(self.source_path)}. ' + self.guidance.text())
         if self.status_bar:
             self.status_bar.update_badge('DSP', 'CAUTION' if warnings else 'COMPLETE', AMBER if warnings else GREEN)
         self.protocol_panel.set_results(result)
@@ -1612,6 +1716,7 @@ class RPPGPage(QWidget):
         self.closing = True
         self._stop()
         self.start.setEnabled(False)
+        self.upload_video.setEnabled(False)
         self.reset.setEnabled(False)
         return self.worker is None
 
@@ -2348,6 +2453,7 @@ class VoicePage(QWidget):
         self.cancelled = False
         self.closing = False
         self.result = None
+        self.source_kind = 'microphone'
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._poll)
         layout = QVBoxLayout(self)
@@ -2489,13 +2595,15 @@ class VoicePage(QWidget):
         self._reset()
         self.cancelled = False
         self.result = None
+        self.source_kind = 'file' if worker_type is VoiceFileCaptureWorker else 'microphone'
         self.protocol_panel.clear()
         self.start.setEnabled(False)
         self.upload.setEnabled(False)
         self.stop.setEnabled(True)
         set_badge(self.badge, 'STARTING', AMBER)
         if self.status_bar:
-            self.status_bar.update_badge('MIC', 'STARTING', AMBER)
+            source_status = {'microphone': 'STARTING', 'file': 'AUDIO FILE', 'video': 'VIDEO FILE'}[self.source_kind]
+            self.status_bar.update_badge('MIC', source_status, AMBER)
         self.worker = worker_type(*args, parent=self)
         self.worker.finished.connect(self._finished)
         self.worker.failed.connect(self._failed)
@@ -2529,7 +2637,10 @@ class VoicePage(QWidget):
         if 'result' in latest:
             self.result = latest['result']
         if self.status_bar:
-            self.status_bar.update_badge('MIC', 'ACTIVE' if latest['state'] == 'RECORDING' else 'STANDBY', GREEN)
+            if self.source_kind == 'microphone':
+                self.status_bar.update_badge('MIC', 'ACTIVE' if latest['state'] == 'RECORDING' else 'STANDBY', GREEN)
+            else:
+                self.status_bar.update_badge('MIC', 'VIDEO FILE' if self.source_kind == 'video' else 'AUDIO FILE', AMBER)
 
     def _finished(self):
         worker = self.worker
@@ -2574,9 +2685,10 @@ class VoicePage(QWidget):
             f"Jitter RAP: {result['jitter_rap']:.3f}%; shimmer APQ5: {result['shimmer_apq5']:.3f}%. "
             + ' '.join(result['warnings'])
         )
-        if result.get('source') == 'file':
+        if result.get('source') in ('file', 'video'):
+            source_label = 'Видео' if result.get('source') == 'video' else 'Файл'
             self.detail.setText(
-                f"Файл: {result.get('file_name', '')}; выбранный фрагмент: {result.get('segment_start_sec', 0):.2f} с; "
+                f"{source_label}: {result.get('file_name', '')}; выбранный фрагмент: {result.get('segment_start_sec', 0):.2f} с; "
                 + self.detail.text()
             )
         for plot in (self.wave, self.pitch_plot, self.spectrogram):
@@ -2603,6 +2715,7 @@ class VoicePage(QWidget):
         self.closing = True
         self._stop()
         self.start.setEnabled(False)
+        self.upload.setEnabled(False)
         self.reset.setEnabled(False)
         return self.worker is None
 

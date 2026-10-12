@@ -91,21 +91,21 @@ class FacialProtocolTests(unittest.TestCase):
 
     def test_threshold_boundaries_prioritize_elevated_measurements(self):
         for asi, smile, brow, expected in [
-            (2.11, 6.5, 2.3, 'LOW MEASURED'), (8, 6, 2, 'MODERATE'),
-            (15, 20, 2, 'MODERATE'), (9, 21, 2, 'LOWER-FACE'),
-            (16, 5, 12, 'SMILE AND BROW'), (2, 21, 11.99, 'LOWER-FACE'),
+            (2.11, 6.5, 2.3, 'НИЗКОЕ ОТКЛОНЕНИЕ'), (8, 6, 2, 'УМЕРЕННОЕ'),
+            (15, 20, 2, 'УМЕРЕННОЕ'), (9, 21, 2, 'НИЖНЕЙ ЧАСТИ'),
+            (16, 5, 12, 'УЛЫБКИ И БРОВЕЙ'), (2, 21, 11.99, 'НИЖНЕЙ ЧАСТИ'),
         ]:
             with self.subTest(asi=asi, smile=smile, brow=brow):
                 status, detail, action, limitation = facial_protocol_text({'asymmetry_index': asi, 'smile_imbalance': smile, 'brow_imbalance': brow})
                 self.assertIn(expected, status)
                 self.assertNotIn('FAST POSITIVE', status)
                 self.assertNotIn('NORMAL', status)
-                self.assertIn('unvalidated', limitation)
-                if 'LOW MEASURED' in status:
-                    self.assertIn('negative FAST', detail)
-                    self.assertIn('emergency', action)
+                self.assertIn('непроверенные', limitation)
+                if 'НИЗКОЕ ОТКЛОНЕНИЕ' in status:
+                    self.assertIn('не подтверждает нормальную функцию лица', detail)
+                    self.assertIn('экстренн', action)
 
-    def test_exports_include_face_metrics_and_disclaimer(self):
+    def test_exports_include_face_metrics_and_recommendations(self):
         self.complete()
         panel = self.page.protocol_panel
         with tempfile.TemporaryDirectory() as directory:
@@ -116,7 +116,9 @@ class FacialProtocolTests(unittest.TestCase):
             contents = text.read_text(encoding='utf-8')
             self.assertIn('ОТЧЁТ ОБ ИССЛЕДОВАНИИ СИММЕТРИИ ЛИЦА', contents)
             self.assertIn('Дисбаланс улыбки', contents)
-            self.assertIn('ОГРАНИЧЕНИЕ:', contents)
+            self.assertNotIn('РЕКОМЕНДАЦИИ', contents)
+            self.assertNotIn('ОГРАНИЧЕНИЕ:', contents)
+            self.assertTrue(contents.rstrip().endswith(panel.action_label.text()))
             with patch('protocol_panel.QFileDialog.getSaveFileName', return_value=(str(pdf), '')):
                 panel.export_button.click()
             self.assertTrue(pdf.read_bytes().startswith(b'%PDF-'))
