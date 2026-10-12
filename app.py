@@ -2734,7 +2734,7 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        tabs = ["ОБЗОР", "ТРЕМОР", "ЛИЦО", "ПУЛЬС", "КОММУНИКАЦИЯ", "ГОЛОС"]
+        tabs = ["ОБЗОР", "ТРЕМОР", "НЕЙРОМИМИКА", "ПУЛЬС", "АЙТРЕКИНГ", "ГОЛОС"]
         self.nav = NavBar(tabs, self.switch_page)
         root.addWidget(self.nav)
 

@@ -5,8 +5,8 @@ from PyQt6.QtWidgets import QLabel
 
 
 TEXT = {
-    'DASHBOARD': 'ОБЗОР', 'TREMOR': 'ТРЕМОР', 'FACIAL': 'ЛИЦО',
-    'rPPG': 'ПУЛЬС (rPPG)', 'AAC': 'КОММУНИКАЦИЯ (AAC)', 'VOICE': 'ГОЛОС',
+    'DASHBOARD': 'ОБЗОР', 'TREMOR': 'ТРЕМОР', 'FACIAL': 'НЕЙРОМИМИКА',
+    'rPPG': 'ПУЛЬС (rPPG)', 'AAC': 'АЙТРЕКИНГ', 'VOICE': 'ГОЛОС',
     'SYSTEM OVERVIEW': 'ОБЗОР СИСТЕМЫ', 'Platform Information': 'Сведения о платформе',
     'Module Registry': 'Реестр модулей', 'Architecture': 'Архитектура',
     'Research Modules': 'Исследовательские модули', 'Assistive + Monitoring': 'Вспомогательные и мониторинговые модули',
@@ -237,7 +237,7 @@ TEXT = {
     'WATER': 'ВОДА', 'DOCTOR': 'ВРАЧ', 'PAIN': 'БОЛЬ', 'YES': 'ДА', 'NO': 'НЕТ', 'HELP': 'ПОМОЩЬ',
     'CATEGORY 1 / 3: BASIC NEEDS': 'КАТЕГОРИЯ 1 / 3: ОСНОВНЫЕ ПОТРЕБНОСТИ',
     'FACE MESH / REST -> SMILE -> RAISE EYEBROWS': 'СЕТКА ЛИЦА / ПОКОЙ → УЛЫБКА → ПОДЪЁМ БРОВЕЙ',
-    'rPPG': 'ПУЛЬС', 'AAC': 'КОММУНИКАЦИЯ', 'VOICE': 'ГОЛОС',
+    'rPPG': 'ПУЛЬС', 'AAC': 'АЙТРЕКИНГ', 'VOICE': 'ГОЛОС',
     'STOP': 'СТОП', 'RESET': 'СБРОС', 'START RECORDING': 'ЗАПИСАТЬ ГОЛОС',
     'START FACIAL TEST': 'НАЧАТЬ ТЕСТ ЛИЦА', 'START MEASUREMENT': 'НАЧАТЬ ИЗМЕРЕНИЕ',
     'START CAPTURE': 'НАЧАТЬ ЗАПИСЬ', 'EXPORT REPORT': 'СОХРАНИТЬ ОТЧЁТ',
