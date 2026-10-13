@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint
 from PyQt6.QtGui import QFont, QColor, QImage, QPixmap
+from PyQt6.QtWidgets import QLabel as PlainLabel
 from tremor_engine import TremorEngine
 from capture_worker import ProcessCaptureWorker as CaptureWorker
 from protocol_panel import ProtocolPanel, FacialProtocolPanel, RPPGProtocolPanel, VoiceProtocolPanel
@@ -35,6 +36,7 @@ from gaze_engine import (DwellEngine, DwellState, GazeTargeting, fit_gaze_classi
                          CALIBRATION_MAX_WINDOW_SECONDS, CALIBRATION_GAP_SECONDS,
                          CALIBRATION_ACCEPT_SECONDS, CALIBRATION_MIN_SAMPLES, HEAD_SWEEP_SECONDS)
 from aac_speech import SpeechWorker
+from phrase_graph import PhraseGraph, ROOT_WORDS
 from motor_capture import MotorCaptureWorker, MOTOR_VIDEO_FILTER
 from motor_engine import analyze_tapping, motor_band
 from motor_protocol import MotorProtocolPanel, MOTOR_DISCLAIMER
@@ -2046,6 +2048,14 @@ class DwellButton(QPushButton):
                 border-radius: 0px; padding: 3px 5px; }}
             QPushButton:hover {{ background: {BG_ALT}; }}
         """)
+        self.navigation_size_hint = super().sizeHint() if navigation else None
+
+    def sizeHint(self):
+        hint = getattr(self, 'navigation_size_hint', None)
+        return hint if hint is not None else super().sizeHint()
+
+    def minimumSizeHint(self):
+        return self.sizeHint() if self.navigation else super().minimumSizeHint()
 
     def set_dwell(self, progress, target=False):
         self.progress = max(0.0, min(1.0, float(progress)))
@@ -2089,6 +2099,20 @@ AAC_CATEGORIES = [
 ]
 
 
+class AACContextLabel(PlainLabel):
+    """Russian context text must not change the calibrated navigation geometry."""
+
+    def freeze_size_hint(self):
+        self.fixed_hint = super().sizeHint()
+        self.fixed_minimum_hint = super().minimumSizeHint()
+
+    def sizeHint(self):
+        return self.fixed_hint if hasattr(self, 'fixed_hint') else super().sizeHint()
+
+    def minimumSizeHint(self):
+        return self.fixed_minimum_hint if hasattr(self, 'fixed_minimum_hint') else super().minimumSizeHint()
+
+
 class AACPage(QWidget):
     capture_finished = pyqtSignal()
     dwell_threshold = DWELL_THRESHOLD_MS / 1000
@@ -2127,6 +2151,10 @@ class AACPage(QWidget):
         self.dwell_started = None
         self.cooldown_until = 0.0
         self.category_index = 0
+        self.phrase_graph = PhraseGraph()
+        self.is_predictive = False
+        self.predictive_context = None
+        self.root_words = tuple(ROOT_WORDS)
         self.dwell_engine = DwellEngine()
         self.speech = SpeechWorker()
         self.speech_error = ''
@@ -2197,7 +2225,7 @@ class AACPage(QWidget):
         self.btn_speak = cmd_button('SPEAK')
         self.btn_clear = cmd_button('CLEAR', primary=False)
         self.btn_speak.clicked.connect(self._speak_output)
-        self.btn_clear.clicked.connect(lambda: self.output.clear())
+        self.btn_clear.clicked.connect(self._on_clear_clicked)
         output_buttons.addWidget(self.btn_speak)
         output_buttons.addWidget(self.btn_clear)
         output_layout.addLayout(output_buttons)
@@ -2205,7 +2233,7 @@ class AACPage(QWidget):
         layout.addLayout(top, 1)
 
         self.grid_panel, grid_layout = panel('Сетка фраз')
-        self.category_label = QLabel('')
+        self.category_label = AACContextLabel('')
         self.category_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.category_label.setFont(f_mono(10, True))
         self.category_label.setStyleSheet(f'color: {NAVY}; border: none;')
@@ -2239,6 +2267,7 @@ class AACPage(QWidget):
         matrix_layout.setRowStretch(1, 1)
         grid_layout.addWidget(self.matrix, 1)
         self._set_category(0)
+        self.category_label.freeze_size_hint()
         layout.addWidget(self.grid_panel, 2)
 
     # ------------------------------------------------------------------ session
@@ -2296,6 +2325,8 @@ class AACPage(QWidget):
         return rectangles
 
     def _begin_calibration_state(self):
+        if self.is_predictive:
+            self._set_category(self.category_index)
         count = len(self._calibration_buttons())
         self.calibration_active = True
         self.calibration_windows = [[] for _ in range(count)]
@@ -2604,7 +2635,9 @@ class AACPage(QWidget):
             self._select_word(self.card_buttons.index(button))
 
     def _change_category(self, delta):
-        self._set_category((self.category_index + delta) % len(AAC_CATEGORIES))
+        index = (self.category_index if self.is_predictive and delta < 0
+                 else (self.category_index + delta) % len(AAC_CATEGORIES))
+        self._set_category(index)
         if self.calibration_active:
             self._restart_calibration_window()
             self._highlight_calibration_target(0.0)
@@ -2613,15 +2646,22 @@ class AACPage(QWidget):
             # Manual navigation and gaze arrows both lock out selection after
             # relabeling. Use the sample clock, just like DwellEngine, and never
             # shorten the cooldown already started by a gaze-triggered arrow.
-            timestamp = self.dwell_engine.last_timestamp
-            if timestamp is not None:
-                self.dwell_engine.cooldown_until = max(
-                    self.dwell_engine.cooldown_until, timestamp + self.cooldown_duration)
-                self.dwell_engine.state = DwellState.COOLDOWN
-                self.cooldown_until = self.dwell_engine.cooldown_until
+            self._context_cooldown()
+
+    def _context_cooldown(self):
+        self._reset_dwell()
+        timestamp = self.dwell_engine.last_timestamp
+        if timestamp is not None:
+            self.dwell_engine.cooldown_until = max(
+                self.dwell_engine.cooldown_until, timestamp + self.cooldown_duration)
+            self.dwell_engine.state = DwellState.COOLDOWN
+            self.cooldown_until = self.dwell_engine.cooldown_until
 
     def _set_category(self, index):
         self._reset_dwell()
+        self.is_predictive = False
+        self.predictive_context = None
+        self.previous_button.setText('< ПРЕДЫДУЩАЯ КАТЕГОРИЯ')
         self.category_index = index % len(AAC_CATEGORIES)
         category, words = AAC_CATEGORIES[self.category_index]
         self.category_label.setText(f'КАТЕГОРИЯ [{self.category_index + 1} / {len(AAC_CATEGORIES)}]: {category}')
@@ -2632,16 +2672,44 @@ class AACPage(QWidget):
         self._refresh_calibration_warning()
 
     def _select_word(self, index):
-        word = AAC_CATEGORIES[self.category_index][1][index]
+        word = self.card_buttons[index].text()
+        if not self.phrase_graph.has_word(word):
+            return
         current = self.output.toPlainText()
         self.output.setPlainText(current + word + ' ')
         cursor = self.output.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
         self.output.setTextCursor(cursor)
         self._speak(word)
-        self._reset_dwell()
         if self.calibration_active:
+            self._reset_dwell()
             self._highlight_calibration_target(0.0)
+            return
+        self.is_predictive = True
+        self.predictive_context = word
+        self._show_predictions(word)
+
+    def _show_predictions(self, word):
+        predictions = self.phrase_graph.predict(word, n=len(self.card_buttons))
+        for button, prediction in zip(self.card_buttons, predictions):
+            button.setText(prediction)
+        self.category_label.setText(f'ПРЕДИКТИВНЫЙ КОНТЕКСТ: [ {word} ]')
+        self.previous_button.setText('[ ⟲ В КОРЕНЬ ]')
+        for button in self._calibration_buttons():
+            button.clear_flash()
+        self._refresh_calibration_warning()
+        self._context_cooldown()
+
+    def _on_clear_clicked(self):
+        self.output.clear()
+        self.speech.cancel()
+        self._set_category(self.category_index)
+        if self.calibration_active:
+            self._restart_calibration_window()
+            self._highlight_calibration_target(0.0)
+            self._show_calibration_prompt()
+        else:
+            self._context_cooldown()
 
     def _speak_output(self):
         text = self.output.toPlainText().strip()

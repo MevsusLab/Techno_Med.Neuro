@@ -439,6 +439,9 @@ class AACPageTests(unittest.TestCase):
                 self.assertIn(f'[{index + 1} / 6]', self.page.category_label.text())
                 for button in widgets:
                     button.click()
+                    # Each selection now opens predictions; root recovery keeps
+                    # the standard sheet available for every original word.
+                    self.page.previous_button.click()
                 expected.extend(words)
                 self.page.next_button.click()
         self.assertEqual(self.page.category_index, 0)
@@ -469,6 +472,7 @@ class AACPageTests(unittest.TestCase):
                                lambda: self.page.output.toPlainText() != before)
                     self.assertEqual(self.page.output.toPlainText(), before + word + ' ')
                     expected.append(word)
+                    look_until(driver.centers()[0], lambda: not self.page.is_predictive)
                 look_until(driver.centers()[1], lambda: self.page.category_index != index)
                 self.assertIs(self.page.calibration_model, model)
                 self.assertFalse(self.page.calibration_active)

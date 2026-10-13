@@ -1,6 +1,6 @@
 # Diff Details
 
-Date : 2026-10-12 12:11:39
+Date : 2026-10-13 11:53:06
 
 Directory c:\\Users\\agonc\\OneDrive\\Desktop\\PROGRAMIRING\\MevsusLab\\ndtp\\TecnoMedNeuro
 

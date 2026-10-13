@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+import weakref
 
 from PyQt6.QtCore import Qt, QObject, QEvent, QVariantAnimation, QEasingCurve, pyqtSignal
 from PyQt6.QtGui import QFont, QTextDocument
@@ -135,16 +136,29 @@ class ReportReveal(QObject):
 
     def __init__(self, container, panel):
         super().__init__(container)
-        self.container = container
-        self.panel = panel
+        # The QObject parent owns this controller. Python back-references to
+        # the owner/dock must not form a cycle that outlives the native widgets.
+        self._container_ref = weakref.ref(container)
+        self._panel_ref = weakref.ref(panel)
         self.fraction = 0.0
         self.animation = QVariantAnimation(self)
         self.animation.setDuration(240)
         self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self.animation.valueChanged.connect(self._set_fraction)
-        self.animation.finished.connect(lambda: self._set_fraction(.5))
+        self.animation.finished.connect(self._finish)
         container.installEventFilter(self)
         panel.installEventFilter(self)
+
+    def _finish(self):
+        self._set_fraction(.5)
+
+    @property
+    def container(self):
+        return self._container_ref()
+
+    @property
+    def panel(self):
+        return self._panel_ref()
 
     def _set_fraction(self, fraction):
         self.fraction = float(fraction)
