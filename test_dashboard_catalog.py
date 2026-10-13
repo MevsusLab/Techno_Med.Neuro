@@ -32,8 +32,8 @@ class DashboardCatalogTests(unittest.TestCase):
         self.qt.processEvents()
         self.qt.processEvents()
 
-    def test_top_blocks_keep_original_geometry_at_both_window_sizes(self):
-        for width, height, half_width, arch_height in ((1200, 750, 578, 85), (1400, 860, 678, 71)):
+    def test_top_blocks_keep_original_geometry_and_cdss_replaces_architecture(self):
+        for width, height, half_width in ((1200, 750, 578), (1400, 860, 678)):
             with self.subTest(width=width):
                 self.window.resize(width, height)
                 self.settle()
@@ -41,7 +41,8 @@ class DashboardCatalogTests(unittest.TestCase):
                           if label.text() in ('СВЕДЕНИЯ О ПЛАТФОРМЕ', 'РЕЕСТР МОДУЛЕЙ', 'АРХИТЕКТУРА')}
                 self.assertEqual(frames['СВЕДЕНИЯ О ПЛАТФОРМЕ'].geometry().getRect(), (16, 43, half_width, 255))
                 self.assertEqual(frames['РЕЕСТР МОДУЛЕЙ'].geometry().getRect(), (28 + half_width, 43, half_width, 255))
-                self.assertEqual(frames['АРХИТЕКТУРА'].geometry().getRect(), (16, 310, width - 32, arch_height))
+                self.assertNotIn('АРХИТЕКТУРА', frames)
+                self.assertEqual(self.window.dashboard_page.cdss.geometry().getRect(), (16, 310, width - 32, 260))
 
     def test_grid_has_four_research_and_two_auxiliary_cards_with_complete_text(self):
         self.assertEqual(len(self.catalog.cards), 6)
@@ -113,7 +114,7 @@ class DashboardCatalogTests(unittest.TestCase):
             if width == 1200:
                 self.assertGreater(self.catalog.verticalScrollBar().maximum(), 0)
             else:
-                self.assertEqual(self.catalog.verticalScrollBar().maximum(), 0)
+                self.assertGreater(self.catalog.verticalScrollBar().maximum(), 0)
 
     def test_previews_are_light_vector_drawings_and_hover_does_not_change_geometry(self):
         for card in self.catalog.cards:

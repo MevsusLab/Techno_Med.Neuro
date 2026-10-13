@@ -39,6 +39,8 @@ from motor_capture import MotorCaptureWorker, MOTOR_VIDEO_FILTER
 from motor_engine import analyze_tapping, motor_band
 from motor_protocol import MotorProtocolPanel, MOTOR_DISCLAIMER
 from dashboard_catalog import DashboardCatalog
+from session_diagnostics import SessionDiagnostics
+from cdss_dashboard import CDSSDashboard
 from i18n_ru import RussianLabel as QLabel, ru
 
 
@@ -401,8 +403,9 @@ class StatusBar(QWidget):
 class DashboardPage(QWidget):
     module_requested = pyqtSignal(int)
 
-    def __init__(self):
+    def __init__(self, session=None):
         super().__init__()
+        self.session = session if session is not None else SessionDiagnostics(self)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(12)
@@ -463,18 +466,8 @@ class DashboardPage(QWidget):
         mod_lay.addWidget(table)
         top.addWidget(mod_panel)
         layout.addLayout(top)
-        arch_panel, arch_lay = panel("Architecture")
-        arch_text = QLabel(
-            "INPUT (Webcam / Mic)  -->  MediaPipe Landmark Extraction  "
-            "-->  Signal Preprocessing (Butterworth / Hamming)  "
-            "-->  Spectral Analysis (FFT / PSD)  -->  Classification / Metrics  "
-            "-->  Motion Measurements (research use only)"
-        )
-        arch_text.setFont(f_mono(9))
-        arch_text.setStyleSheet(f"color: {TEXT_DIM}; border: none;")
-        arch_text.setWordWrap(True)
-        arch_lay.addWidget(arch_text)
-        layout.addWidget(arch_panel)
+        self.cdss = CDSSDashboard(self.session)
+        layout.addWidget(self.cdss)
         self.catalog = DashboardCatalog()
         self.catalog.module_requested.connect(self.module_requested)
         layout.addWidget(self.catalog, 1)
@@ -3076,12 +3069,14 @@ class MainWindow(QMainWindow):
         root.addWidget(self.nav)
 
         self.status_bar = StatusBar()
+        self.session = SessionDiagnostics(self)
+        self.session.stopped.connect(self._finish_close)
 
         self.stack = QStackedWidget()
         self.tremor_page = TremorPage(status_bar=self.status_bar)
         self._close_pending = False
         self.tremor_page.capture_finished.connect(self._finish_close)
-        self.dashboard_page = DashboardPage()
+        self.dashboard_page = DashboardPage(self.session)
         self.dashboard_page.module_requested.connect(self.switch_page)
         self.stack.addWidget(self.dashboard_page)
         self.stack.addWidget(self.tremor_page)
@@ -3100,6 +3095,12 @@ class MainWindow(QMainWindow):
         self.motor_page = MotorPage(status_bar=self.status_bar)
         self.motor_page.capture_finished.connect(self._finish_close)
         self.stack.addWidget(self.motor_page)
+        for module, page in (('tremor', self.tremor_page), ('facial', self.facial_page),
+                             ('voice', self.voice_page), ('motor', self.motor_page), ('rppg', self.rppg_page)):
+            page.session = self.session
+            page.protocol_panel.assessment_completed.connect(
+                lambda results, key=module: self.session.publish(key, results))
+            page.protocol_panel.assessment_cleared.connect(lambda key=module: self.session.clear(key))
         root.addWidget(self.stack)
 
         root.addWidget(self.status_bar)
@@ -3121,7 +3122,8 @@ class MainWindow(QMainWindow):
         voice_done = self.voice_page.cleanup()
         aac_done = self.aac_page.cleanup()
         motor_done = self.motor_page.cleanup()
-        if tremor_done and face_done and rppg_done and voice_done and aac_done and motor_done:
+        session_done = self.session.shutdown()
+        if tremor_done and face_done and rppg_done and voice_done and aac_done and motor_done and session_done:
             event.accept()
         else:
             self._close_pending = True

@@ -88,3 +88,4 @@ class MotorProtocolPanel(ProtocolPanel):
             'TecnoMedNeuro / МОТОРИКА ПАЛЬЦЕВ / ТЕСТ UPDRS 3.4', metrics,
             title, analysis, quality + '\n\n' + MOTOR_DISCLAIMER, action, source,
         )
+        self.assessment_completed.emit(results)

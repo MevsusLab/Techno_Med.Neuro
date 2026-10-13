@@ -9,3 +9,4 @@ librosa==1.0.0
 praat-parselmouth==0.4.7
 pyttsx3==2.99
 imageio-ffmpeg==0.6.0
+networkx==3.6.1

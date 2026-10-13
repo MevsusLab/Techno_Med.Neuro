@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QObject, QEvent, QVariantAnimation, QEasingCurve
+from PyQt6.QtCore import Qt, QObject, QEvent, QVariantAnimation, QEasingCurve, pyqtSignal
 from PyQt6.QtGui import QFont, QTextDocument
 from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtWidgets import QFileDialog, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget
@@ -182,6 +182,9 @@ class ReportReveal(QObject):
 
 
 class ProtocolPanel(QFrame):
+    assessment_completed = pyqtSignal(object)
+    assessment_cleared = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.report = ''
@@ -291,10 +294,12 @@ class ProtocolPanel(QFrame):
             'TECNOMEDNEURO / HAND MOTION RESEARCH REPORT', '\n'.join(metrics),
             status, detail, limitation, action, source,
         )
+        self.assessment_completed.emit(results)
 
     def clear(self):
         self.report = ''
         self.hide()
+        self.assessment_cleared.emit()
 
     def _export(self, pdf):
         if not self.report or self.isHidden():
@@ -420,6 +425,7 @@ class FacialProtocolPanel(ProtocolPanel):
             'TECNOMEDNEURO / FACIAL SYMMETRY RESEARCH REPORT', '\n'.join(metrics),
             status, detail, limitation, action, source,
         )
+        self.assessment_completed.emit(results)
 
 
 def rppg_protocol_text(results):
@@ -509,6 +515,7 @@ class RPPGProtocolPanel(ProtocolPanel):
             'TECNOMEDNEURO / rPPG PULSE RESEARCH REPORT', '\n'.join(line for line in metrics if line),
             status, detail, limitation, action,
         )
+        self.assessment_completed.emit(results)
 
 
 def voice_protocol_text(results):
@@ -610,3 +617,4 @@ class VoiceProtocolPanel(ProtocolPanel):
             'Справочные материалы Praat: https://praat.org/manual/Voice_2__Jitter.html ; https://praat.org/manual/Voice_3__Shimmer.html',
             status, detail, limitation, action,
         ])
+        self.assessment_completed.emit(results)
