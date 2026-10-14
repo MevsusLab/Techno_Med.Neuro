@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QStackedWidget, QFrame, QGridLayout,
     QSizePolicy, QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
-    QFileDialog, QPlainTextEdit
+    QFileDialog, QPlainTextEdit, QScrollBar
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint
 from PyQt6.QtGui import QFont, QColor, QImage, QPixmap
@@ -356,9 +356,9 @@ class NavBar(QWidget):
         self.patient_drawer_button.setFixedHeight(26)
         self.patient_drawer_button.setStyleSheet("""
             QPushButton {
-                background: #0F172A;
-                color: #38BDF8;
-                border: 1px solid #3B82F6;
+                background: #2563EB;
+                color: #FFFFFF;
+                border: 1px solid #60A5FA;
                 padding: 0 10px;
                 border-radius: 0px;
                 font-family: Consolas;
@@ -367,8 +367,8 @@ class NavBar(QWidget):
                 margin-right: 10px;
             }
             QPushButton:hover {
-                background: #1E293B;
-                border-color: #60A5FA;
+                background: #1D4ED8;
+                border-color: #93C5FD;
                 color: #FFFFFF;
             }
             QPushButton:checked {
@@ -376,11 +376,16 @@ class NavBar(QWidget):
                 color: #FFFFFF;
                 border: 1px solid #60A5FA;
             }
+            QPushButton:pressed {
+                background: #1E40AF;
+                color: #FFFFFF;
+                border: 1px solid #3B82F6;
+            }
         """)
         lay.addWidget(self.patient_drawer_button)
         ver = QLabel("v0.1.0-alpha")
         ver.setFont(f_mono(8))
-        ver.setStyleSheet("color: #475569; border: none;")
+        ver.setStyleSheet("color: #94A3B8; background: transparent; border: none;")
         lay.addWidget(ver)
 
     def set_active(self, index):
@@ -439,10 +444,38 @@ class DashboardPage(QWidget):
     def __init__(self, session=None, patient_graph=None):
         super().__init__()
         self.session = session if session is not None else SessionDiagnostics(self)
-        layout = QVBoxLayout(self)
+        self.scroll_y = 0
+
+        self.scrollbar = QScrollBar(Qt.Orientation.Vertical, self)
+        self.scrollbar.setStyleSheet(f"""
+            QScrollBar:vertical {{
+                background: {BG_ALT};
+                width: 8px;
+                margin: 0px;
+                border-left: 1px solid {BORDER};
+            }}
+            QScrollBar::handle:vertical {{
+                background: {TEXT_MUTED};
+                min-height: 24px;
+                border-radius: 0px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {TEXT_DIM};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: transparent;
+            }}
+        """)
+        self.scrollbar.valueChanged.connect(self._on_scroll)
+
+        self.body = QWidget(self)
+        layout = QVBoxLayout(self.body)
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(12)
-        title = QLabel("SYSTEM OVERVIEW")
+        title = QLabel("DASHBOARD")
         title.setFont(f_sans(14, True))
         title.setStyleSheet(f"color: {TEXT};")
         layout.addWidget(title)
@@ -468,6 +501,7 @@ class DashboardPage(QWidget):
             vl.setStyleSheet(f"color: {TEXT}; border: none;")
             info_grid.addWidget(vl, r, 1)
         info_lay.addLayout(info_grid)
+        info_lay.addStretch()
         top.addWidget(info_panel)
         mod_panel, mod_lay = panel("Module Registry")
         table = QTableWidget(6, 3)
@@ -475,6 +509,9 @@ class DashboardPage(QWidget):
         table.horizontalHeader().setFont(f_sans(8, True))
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         table.verticalHeader().setVisible(False)
+        table.verticalHeader().setDefaultSectionSize(26)
+        table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         table.setStyleSheet(f"""
@@ -504,6 +541,32 @@ class DashboardPage(QWidget):
         self.catalog = DashboardCatalog()
         self.catalog.module_requested.connect(self.module_requested)
         layout.addWidget(self.catalog, 1)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        w = self.width()
+        h = self.height()
+        content_h = max(h, 920)
+        self.scrollbar.setGeometry(w - 8, 0, 8, h)
+        max_scroll = max(0, content_h - h)
+        self.scrollbar.setRange(0, max_scroll)
+        self.scrollbar.setPageStep(h)
+        self.scrollbar.setVisible(max_scroll > 0)
+        self.scroll_y = min(self.scroll_y, max_scroll)
+        self.body.setGeometry(0, -self.scroll_y, w, content_h)
+
+    def _on_scroll(self, val):
+        self.scroll_y = val
+        self.body.setGeometry(0, -self.scroll_y, self.width(), self.body.height())
+
+    def wheelEvent(self, event):
+        delta = event.angleDelta().y()
+        if self.scrollbar.maximum() > 0:
+            step = 60 if delta < 0 else -60
+            self.scrollbar.setValue(self.scrollbar.value() + step)
+            event.accept()
+        else:
+            super().wheelEvent(event)
 
 
 class VideoLabel(QLabel):
@@ -3163,7 +3226,7 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        tabs = ["ОБЗОР", "ТРЕМОР", "НЕЙРОМИМИКА", "ПУЛЬС", "АЙТРЕКИНГ", "ГОЛОС", "МОТОРИКА"]
+        tabs = ["DASHBOARD", "ТРЕМОР", "НЕЙРОМИМИКА", "ПУЛЬС", "АЙТРЕКИНГ", "ГОЛОС", "МОТОРИКА"]
         self.nav = NavBar(tabs, self.switch_page)
         root.addWidget(self.nav)
 

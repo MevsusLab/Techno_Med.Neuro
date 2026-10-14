@@ -395,10 +395,6 @@ class CDSSDashboard(QWidget):
         rl.addWidget(self.export)
         split.addWidget(right, 2)
         outer.addLayout(split, 1)
-        disclaimer = QLabel(CDSS_DISCLAIMER)
-        disclaimer.setFont(QFont('Consolas', 7))
-        disclaimer.setWordWrap(True)
-        outer.addWidget(disclaimer)
 
         if not self.patient_graph.list_patients():
             self.patient_graph.create_patient('Пациент #01')

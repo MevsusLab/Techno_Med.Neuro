@@ -172,7 +172,7 @@ class ModuleCard(QFrame):
         header.addWidget(self.title, 1)
         self.status = QLabel('[ ГОТОВ ]')
         self.status.setFont(QFont('Consolas', 7, QFont.Weight.Bold))
-        self.status.setStyleSheet('color: #059669; background: #FFFFFF; border: 1px solid #E2E8F0; padding: 1px 4px; border-radius: 0px;')
+        self.status.setStyleSheet('color: #059669; background: transparent; border: none; padding: 0px;')
         header.addWidget(self.status)
         layout.addLayout(header)
         self.preview = ModulePreview(kind)
@@ -233,7 +233,7 @@ class DashboardCatalog(QScrollArea):
         body = QWidget()
         body.setStyleSheet('background: #FFFFFF;')
         columns = QHBoxLayout(body)
-        columns.setContentsMargins(0, 0, 0, 0)
+        columns.setContentsMargins(0, 0, 8, 0)
         columns.setSpacing(12)
         self.cards = []
         for title, modules, stretch in (
@@ -262,6 +262,8 @@ class DashboardCatalog(QScrollArea):
             if stretch == 2:
                 grid.setColumnStretch(0, 1)
                 grid.setColumnStretch(1, 1)
+            else:
+                grid.setColumnStretch(0, 1)
             layout.addLayout(grid)
             layout.addStretch()
             columns.addWidget(section, stretch)

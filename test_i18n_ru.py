@@ -37,7 +37,7 @@ class RussianTextTests(unittest.TestCase):
             self.assertEqual(window.aac_page.dwell_display.findChildren(QLabel)[0].text(), 'УДЕРЖАНИЕ ВЗГЛЯДА')
             self.assertEqual(window.tremor_page.page_badge.text(), 'IDLE')
             self.assertEqual([button.text() for button in window.nav.buttons],
-                             ['ОБЗОР', 'ТРЕМОР', 'НЕЙРОМИМИКА', 'ПУЛЬС', 'АЙТРЕКИНГ', 'ГОЛОС', 'МОТОРИКА'])
+                             ['DASHBOARD', 'ТРЕМОР', 'НЕЙРОМИМИКА', 'ПУЛЬС', 'АЙТРЕКИНГ', 'ГОЛОС', 'МОТОРИКА'])
         finally:
             window.close()
 

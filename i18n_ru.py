@@ -5,9 +5,9 @@ from PyQt6.QtWidgets import QLabel
 
 
 TEXT = {
-    'DASHBOARD': 'ОБЗОР', 'TREMOR': 'ТРЕМОР', 'FACIAL': 'НЕЙРОМИМИКА',
+    'DASHBOARD': 'DASHBOARD', 'ОБЗОР': 'DASHBOARD', 'TREMOR': 'ТРЕМОР', 'FACIAL': 'НЕЙРОМИМИКА',
     'rPPG': 'ПУЛЬС (rPPG)', 'AAC': 'АЙТРЕКИНГ', 'VOICE': 'ГОЛОС',
-    'SYSTEM OVERVIEW': 'ОБЗОР СИСТЕМЫ', 'Platform Information': 'Сведения о платформе',
+    'SYSTEM OVERVIEW': 'DASHBOARD', 'Platform Information': 'Сведения о платформе',
     'Module Registry': 'Реестр модулей', 'Architecture': 'Архитектура',
     'Research Modules': 'Исследовательские модули', 'Assistive + Monitoring': 'Вспомогательные и мониторинговые модули',
     'Hand Motion': 'Движения кисти', 'Facial Asymmetry': 'Симметрия лица',

@@ -533,9 +533,32 @@ class PatientCardsDrawer(QFrame):
         header_row.addWidget(title, 1)
 
         self.close_button = QPushButton('✕')
-        self.close_button.setFont(QFont('Segoe UI', 10, QFont.Weight.Bold))
-        self.close_button.setFixedSize(30, 24)
+        self.close_button.setFixedSize(28, 28)
         self.close_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.close_button.setStyleSheet('''
+            QPushButton {
+                background: #F1F5F9;
+                color: #0F172A;
+                border: 1px solid #CBD5E1;
+                padding: 0px;
+                margin: 0px;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 13px;
+                font-weight: bold;
+                text-align: center;
+                border-radius: 0px;
+            }
+            QPushButton:hover {
+                background: #EF4444;
+                color: #FFFFFF;
+                border-color: #EF4444;
+            }
+            QPushButton:pressed {
+                background: #DC2626;
+                color: #FFFFFF;
+                border-color: #DC2626;
+            }
+        ''')
         self.close_button.clicked.connect(self.close_drawer)
         header_row.addWidget(self.close_button)
         main_lay.addLayout(header_row)
