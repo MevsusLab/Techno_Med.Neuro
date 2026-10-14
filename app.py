@@ -43,6 +43,8 @@ from motor_protocol import MotorProtocolPanel, MOTOR_DISCLAIMER
 from dashboard_catalog import DashboardCatalog
 from session_diagnostics import SessionDiagnostics
 from cdss_dashboard import CDSSDashboard
+from patient_graph import TemporalPatientGraph
+from patient_cards_drawer import PatientCardsDrawer
 from i18n_ru import RussianLabel as QLabel, ru
 
 
@@ -347,7 +349,36 @@ class NavBar(QWidget):
             lay.addWidget(btn)
             self.buttons.append(btn)
         lay.addStretch()
-        ver = QLabel("v0.1")
+        self.patient_drawer_button = QPushButton("КАРТОТЕКА ПАЦИЕНТОВ")
+        self.patient_drawer_button.setFont(f_mono(9, True))
+        self.patient_drawer_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.patient_drawer_button.setCheckable(True)
+        self.patient_drawer_button.setFixedHeight(26)
+        self.patient_drawer_button.setStyleSheet("""
+            QPushButton {
+                background: #0F172A;
+                color: #38BDF8;
+                border: 1px solid #3B82F6;
+                padding: 0 10px;
+                border-radius: 0px;
+                font-family: Consolas;
+                font-size: 11px;
+                font-weight: bold;
+                margin-right: 10px;
+            }
+            QPushButton:hover {
+                background: #1E293B;
+                border-color: #60A5FA;
+                color: #FFFFFF;
+            }
+            QPushButton:checked {
+                background: #2563EB;
+                color: #FFFFFF;
+                border: 1px solid #60A5FA;
+            }
+        """)
+        lay.addWidget(self.patient_drawer_button)
+        ver = QLabel("v0.1.0-alpha")
         ver.setFont(f_mono(8))
         ver.setStyleSheet("color: #475569; border: none;")
         lay.addWidget(ver)
@@ -405,7 +436,7 @@ class StatusBar(QWidget):
 class DashboardPage(QWidget):
     module_requested = pyqtSignal(int)
 
-    def __init__(self, session=None):
+    def __init__(self, session=None, patient_graph=None):
         super().__init__()
         self.session = session if session is not None else SessionDiagnostics(self)
         layout = QVBoxLayout(self)
@@ -468,7 +499,7 @@ class DashboardPage(QWidget):
         mod_lay.addWidget(table)
         top.addWidget(mod_panel)
         layout.addLayout(top)
-        self.cdss = CDSSDashboard(self.session)
+        self.cdss = CDSSDashboard(self.session, patient_graph=patient_graph)
         layout.addWidget(self.cdss)
         self.catalog = DashboardCatalog()
         self.catalog.module_requested.connect(self.module_requested)
@@ -3119,7 +3150,7 @@ class VoicePage(QWidget):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, patient_graph=None):
         super().__init__()
         self.setWindowTitle("TecnoMedNeuro — Интеллектуальная система цифровой нейродиагностики и мониторинговых модулей")
         self.setMinimumSize(1200, 750)
@@ -3136,7 +3167,10 @@ class MainWindow(QMainWindow):
         self.nav = NavBar(tabs, self.switch_page)
         root.addWidget(self.nav)
 
+        self.patient_drawer_button = self.nav.patient_drawer_button
+
         self.status_bar = StatusBar()
+        self.patient_graph = patient_graph if patient_graph is not None else TemporalPatientGraph()
         self.session = SessionDiagnostics(self)
         self.session.stopped.connect(self._finish_close)
 
@@ -3144,7 +3178,7 @@ class MainWindow(QMainWindow):
         self.tremor_page = TremorPage(status_bar=self.status_bar)
         self._close_pending = False
         self.tremor_page.capture_finished.connect(self._finish_close)
-        self.dashboard_page = DashboardPage(self.session)
+        self.dashboard_page = DashboardPage(self.session, patient_graph=self.patient_graph)
         self.dashboard_page.module_requested.connect(self.switch_page)
         self.stack.addWidget(self.dashboard_page)
         self.stack.addWidget(self.tremor_page)
@@ -3172,7 +3206,26 @@ class MainWindow(QMainWindow):
         root.addWidget(self.stack)
 
         root.addWidget(self.status_bar)
+
+        self.patient_drawer = PatientCardsDrawer(self, patient_graph=self.patient_graph,
+                                                 session=self.session,
+                                                 cdss=self.dashboard_page.cdss)
+        self.patient_drawer_button.clicked.connect(self.patient_drawer.toggle)
+        self.patient_drawer.update_geometry()
+
         self.switch_page(0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'patient_drawer'):
+            self.patient_drawer.update_geometry()
+
+    def reset_all_modules(self):
+        for page in (self.tremor_page, self.facial_page, self.voice_page, self.motor_page, self.rppg_page):
+            if hasattr(page, 'protocol_panel') and hasattr(page.protocol_panel, 'clear'):
+                page.protocol_panel.clear()
+        if hasattr(self, 'session'):
+            self.session.reset()
 
     def switch_page(self, index):
         if hasattr(self, 'motor_page') and index in (1, 2, 3, 4, 5, 6):

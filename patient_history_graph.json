@@ -1,0 +1,823 @@
+{
+  "directed": true,
+  "multigraph": false,
+  "graph": {},
+  "nodes": [
+    {
+      "node_type": "SESSION",
+      "label": "Эталон #1: Паркинсонический профиль",
+      "reference": true,
+      "patient_id": "ref",
+      "timestamp": "2024-01-01T00:00:00",
+      "session_index": 0,
+      "metrics": {
+        "tremor": {
+          "f_dom": 5.0,
+          "concentration": 85.0,
+          "rms": 1.2
+        },
+        "motor": {
+          "tap_frequency": 2.0,
+          "decrement": -35.0,
+          "rhythm_cv": 28.0
+        },
+        "voice": {
+          "f0": 165.0,
+          "jitter": 1.8,
+          "shimmer": 5.2,
+          "hnr": 16.0
+        }
+      },
+      "active_biomarkers": [
+        "TREMOR_REST_4_6HZ",
+        "MOTOR_DECREMENT_HIGH",
+        "MOTOR_CADENCE_LOW",
+        "VOICE_JITTER_ELEVATED"
+      ],
+      "syndrome_scores": {
+        "SYNDROME_PARKINSONIAN": 100.0,
+        "SYNDROME_ESSENTIAL_TREMOR": 0.0
+      },
+      "id": "ref:parkinsonian"
+    },
+    {
+      "node_type": "BIOMARKER",
+      "label": "Пик движения 4,0–6,5 Гц",
+      "id": "TREMOR_REST_4_6HZ"
+    },
+    {
+      "node_type": "BIOMARKER",
+      "label": "Декремент амплитуды <−20%",
+      "id": "MOTOR_DECREMENT_HIGH"
+    },
+    {
+      "node_type": "BIOMARKER",
+      "label": "Темп таппинга <2,5 Гц",
+      "id": "MOTOR_CADENCE_LOW"
+    },
+    {
+      "node_type": "BIOMARKER",
+      "label": "Повышены джиттер / шиммер",
+      "id": "VOICE_JITTER_ELEVATED"
+    },
+    {
+      "node_type": "SYNDROME",
+      "label": "Экстрапирамидный / паркинсонический паттерн",
+      "id": "SYNDROME_PARKINSONIAN"
+    },
+    {
+      "node_type": "SESSION",
+      "label": "Эталон #2: Лицевой парез FAST+",
+      "reference": true,
+      "patient_id": "ref",
+      "timestamp": "2024-01-01T00:00:00",
+      "session_index": 0,
+      "metrics": {
+        "facial": {
+          "asi": 22.0,
+          "smile": 32.0,
+          "brow": 6.0
+        },
+        "voice": {
+          "f0": 175.0,
+          "jitter": 1.3,
+          "shimmer": 4.2,
+          "hnr": 18.0
+        }
+      },
+      "active_biomarkers": [
+        "FACE_LOWER_PARESIS",
+        "VOICE_JITTER_ELEVATED"
+      ],
+      "syndrome_scores": {
+        "SYNDROME_CENTRAL_STROKE": 95.0,
+        "SYNDROME_BELLS_PALSY": 0.0
+      },
+      "id": "ref:face_fast"
+    },
+    {
+      "node_type": "BIOMARKER",
+      "label": "Дисбаланс улыбки, брови <12%",
+      "id": "FACE_LOWER_PARESIS"
+    },
+    {
+      "node_type": "SYNDROME",
+      "label": "Центральная причина асимметрии: проверка",
+      "id": "SYNDROME_CENTRAL_STROKE"
+    },
+    {
+      "node_type": "SESSION",
+      "label": "Эталон #3: Эссенциальный тремор",
+      "reference": true,
+      "patient_id": "ref",
+      "timestamp": "2024-01-01T00:00:00",
+      "session_index": 0,
+      "metrics": {
+        "tremor": {
+          "f_dom": 8.5,
+          "concentration": 75.0,
+          "rms": 0.8
+        },
+        "motor": {
+          "tap_frequency": 3.5,
+          "decrement": -5.0,
+          "rhythm_cv": 12.0
+        }
+      },
+      "active_biomarkers": [
+        "TREMOR_ACTION_6_12HZ"
+      ],
+      "syndrome_scores": {
+        "SYNDROME_ESSENTIAL_TREMOR": 88.0,
+        "SYNDROME_PARKINSONIAN": 0.0
+      },
+      "id": "ref:essential_tremor"
+    },
+    {
+      "node_type": "BIOMARKER",
+      "label": "Пик движения 6,5–12 Гц",
+      "id": "TREMOR_ACTION_6_12HZ"
+    },
+    {
+      "node_type": "SYNDROME",
+      "label": "Постуральный тремор: дифференциальная оценка",
+      "id": "SYNDROME_ESSENTIAL_TREMOR"
+    },
+    {
+      "node_type": "PATIENT",
+      "label": "Пациент #01",
+      "first_name": "",
+      "last_name": "",
+      "password_hash": null,
+      "created_at": "2026-10-14T11:43:04.520929",
+      "metadata": {},
+      "diagnoses_summary": [
+        "Изменение ЧСС: нагрузка / регуляция (100%)",
+        "Центральная причина асимметрии: проверка (100%)",
+        "Экстрапирамидный / паркинсонический паттерн (100%)"
+      ],
+      "id": "patient:7969d68e"
+    },
+    {
+      "node_type": "PATIENT",
+      "label": "Пациент #02",
+      "first_name": "",
+      "last_name": "",
+      "password_hash": null,
+      "created_at": "2026-10-14T11:43:06.289708",
+      "metadata": {},
+      "diagnoses_summary": [],
+      "id": "patient:8c6541dd"
+    },
+    {
+      "node_type": "SESSION",
+      "patient_id": "patient:7969d68e",
+      "timestamp": "2026-10-14T11:43:06.815730",
+      "session_index": 1,
+      "metrics": {
+        "tremor": {
+          "f_dom": 5.0,
+          "concentration": 80.0,
+          "rms": 1.0
+        },
+        "facial": {
+          "asi": 14.0,
+          "smile": 25.0,
+          "brow": 8.0
+        },
+        "voice": {
+          "f0": 180.0,
+          "jitter": 1.2,
+          "shimmer": 4.0,
+          "hnr": 19.0
+        },
+        "motor": {
+          "tap_frequency": 2.1,
+          "decrement": -30.0,
+          "rhythm_cv": 25.0
+        },
+        "rppg": {
+          "bpm": 110.0,
+          "concentration": 80.0,
+          "baseline_stability": "stable",
+          "roi_spread": 1.0,
+          "coverage": 0.98
+        }
+      },
+      "active_biomarkers": [
+        "TREMOR_REST_4_6HZ",
+        "FACE_LOWER_PARESIS",
+        "VOICE_JITTER_ELEVATED",
+        "MOTOR_DECREMENT_HIGH",
+        "MOTOR_CADENCE_LOW",
+        "TACHYCARDIA_RESTING"
+      ],
+      "syndrome_scores": {
+        "SYNDROME_AUTONOMIC_DYSREG": 100.0,
+        "SYNDROME_CENTRAL_STROKE": 100.0,
+        "SYNDROME_PARKINSONIAN": 100.0
+      },
+      "reference": false,
+      "id": "session:307f1544"
+    },
+    {
+      "node_type": "BIOMARKER",
+      "label": "Камерная ЧСС >95 уд/мин",
+      "id": "TACHYCARDIA_RESTING"
+    },
+    {
+      "node_type": "SYNDROME",
+      "label": "Изменение ЧСС: нагрузка / регуляция",
+      "id": "SYNDROME_AUTONOMIC_DYSREG"
+    },
+    {
+      "node_type": "PATIENT",
+      "label": "Пациент #03",
+      "first_name": "",
+      "last_name": "",
+      "password_hash": null,
+      "created_at": "2026-10-14T11:43:07.250235",
+      "metadata": {},
+      "diagnoses_summary": [],
+      "id": "patient:571cee4f"
+    },
+    {
+      "node_type": "PATIENT",
+      "label": "Пациент #04",
+      "first_name": "",
+      "last_name": "",
+      "password_hash": null,
+      "created_at": "2026-10-14T11:45:47.200962",
+      "metadata": {},
+      "diagnoses_summary": [],
+      "id": "patient:fba0ef61"
+    },
+    {
+      "node_type": "SESSION",
+      "patient_id": "patient:7969d68e",
+      "timestamp": "2026-10-14T11:45:47.844222",
+      "session_index": 2,
+      "metrics": {
+        "tremor": {
+          "f_dom": 5.0,
+          "concentration": 80.0,
+          "rms": 1.0
+        },
+        "facial": {
+          "asi": 14.0,
+          "smile": 25.0,
+          "brow": 8.0
+        },
+        "voice": {
+          "f0": 180.0,
+          "jitter": 1.2,
+          "shimmer": 4.0,
+          "hnr": 19.0
+        },
+        "motor": {
+          "tap_frequency": 2.1,
+          "decrement": -30.0,
+          "rhythm_cv": 25.0
+        },
+        "rppg": {
+          "bpm": 110.0,
+          "concentration": 80.0,
+          "baseline_stability": "stable",
+          "roi_spread": 1.0,
+          "coverage": 0.98
+        }
+      },
+      "active_biomarkers": [
+        "TREMOR_REST_4_6HZ",
+        "FACE_LOWER_PARESIS",
+        "VOICE_JITTER_ELEVATED",
+        "MOTOR_DECREMENT_HIGH",
+        "MOTOR_CADENCE_LOW",
+        "TACHYCARDIA_RESTING"
+      ],
+      "syndrome_scores": {
+        "SYNDROME_AUTONOMIC_DYSREG": 100.0,
+        "SYNDROME_CENTRAL_STROKE": 100.0,
+        "SYNDROME_PARKINSONIAN": 100.0
+      },
+      "reference": false,
+      "id": "session:b8b87867"
+    },
+    {
+      "node_type": "PATIENT",
+      "label": "Пациент #05",
+      "first_name": "",
+      "last_name": "",
+      "password_hash": null,
+      "created_at": "2026-10-14T11:45:48.312572",
+      "metadata": {},
+      "diagnoses_summary": [],
+      "id": "patient:b80c2094"
+    },
+    {
+      "node_type": "PATIENT",
+      "label": "Ивонов Иван",
+      "first_name": "Иван",
+      "last_name": "Ивонов",
+      "password_hash": "0ffe1abd1a08215353c233d6e009613e95eec4253832a761af28ff37ac5a150c",
+      "created_at": "2026-10-14T12:08:00.289789",
+      "metadata": {},
+      "diagnoses_summary": [],
+      "id": "patient:1a7d8eb3"
+    },
+    {
+      "node_type": "PATIENT",
+      "label": "Пациент #07",
+      "first_name": "",
+      "last_name": "",
+      "password_hash": null,
+      "created_at": "2026-10-14T12:34:16.813081",
+      "metadata": {},
+      "diagnoses_summary": [],
+      "id": "patient:a6129db7"
+    },
+    {
+      "node_type": "SESSION",
+      "patient_id": "patient:7969d68e",
+      "timestamp": "2026-10-14T12:34:17.430379",
+      "session_index": 3,
+      "metrics": {
+        "tremor": {
+          "f_dom": 5.0,
+          "concentration": 80.0,
+          "rms": 1.0
+        },
+        "facial": {
+          "asi": 14.0,
+          "smile": 25.0,
+          "brow": 8.0
+        },
+        "voice": {
+          "f0": 180.0,
+          "jitter": 1.2,
+          "shimmer": 4.0,
+          "hnr": 19.0
+        },
+        "motor": {
+          "tap_frequency": 2.1,
+          "decrement": -30.0,
+          "rhythm_cv": 25.0
+        },
+        "rppg": {
+          "bpm": 110.0,
+          "concentration": 80.0,
+          "baseline_stability": "stable",
+          "roi_spread": 1.0,
+          "coverage": 0.98
+        }
+      },
+      "active_biomarkers": [
+        "TREMOR_REST_4_6HZ",
+        "FACE_LOWER_PARESIS",
+        "VOICE_JITTER_ELEVATED",
+        "MOTOR_DECREMENT_HIGH",
+        "MOTOR_CADENCE_LOW",
+        "TACHYCARDIA_RESTING"
+      ],
+      "syndrome_scores": {
+        "SYNDROME_AUTONOMIC_DYSREG": 100.0,
+        "SYNDROME_CENTRAL_STROKE": 100.0,
+        "SYNDROME_PARKINSONIAN": 100.0
+      },
+      "reference": false,
+      "id": "session:0d6d46ef"
+    },
+    {
+      "node_type": "PATIENT",
+      "label": "Пациент #08",
+      "first_name": "",
+      "last_name": "",
+      "password_hash": null,
+      "created_at": "2026-10-14T12:34:18.010352",
+      "metadata": {},
+      "diagnoses_summary": [],
+      "id": "patient:41741ffe"
+    },
+    {
+      "node_type": "PATIENT",
+      "label": "Пациент #09",
+      "first_name": "",
+      "last_name": "",
+      "password_hash": null,
+      "created_at": "2026-10-14T12:36:35.184138",
+      "metadata": {},
+      "diagnoses_summary": [],
+      "id": "patient:b749d143"
+    },
+    {
+      "node_type": "SESSION",
+      "patient_id": "patient:7969d68e",
+      "timestamp": "2026-10-14T12:36:35.871960",
+      "session_index": 4,
+      "metrics": {
+        "tremor": {
+          "f_dom": 5.0,
+          "concentration": 80.0,
+          "rms": 1.0
+        },
+        "facial": {
+          "asi": 14.0,
+          "smile": 25.0,
+          "brow": 8.0
+        },
+        "voice": {
+          "f0": 180.0,
+          "jitter": 1.2,
+          "shimmer": 4.0,
+          "hnr": 19.0
+        },
+        "motor": {
+          "tap_frequency": 2.1,
+          "decrement": -30.0,
+          "rhythm_cv": 25.0
+        },
+        "rppg": {
+          "bpm": 110.0,
+          "concentration": 80.0,
+          "baseline_stability": "stable",
+          "roi_spread": 1.0,
+          "coverage": 0.98
+        }
+      },
+      "active_biomarkers": [
+        "TREMOR_REST_4_6HZ",
+        "FACE_LOWER_PARESIS",
+        "VOICE_JITTER_ELEVATED",
+        "MOTOR_DECREMENT_HIGH",
+        "MOTOR_CADENCE_LOW",
+        "TACHYCARDIA_RESTING"
+      ],
+      "syndrome_scores": {
+        "SYNDROME_AUTONOMIC_DYSREG": 100.0,
+        "SYNDROME_CENTRAL_STROKE": 100.0,
+        "SYNDROME_PARKINSONIAN": 100.0
+      },
+      "reference": false,
+      "id": "session:5de15c83"
+    },
+    {
+      "node_type": "PATIENT",
+      "label": "Пациент #10",
+      "first_name": "",
+      "last_name": "",
+      "password_hash": null,
+      "created_at": "2026-10-14T12:36:36.328627",
+      "metadata": {},
+      "diagnoses_summary": [],
+      "id": "patient:1a5c5e2a"
+    }
+  ],
+  "edges": [
+    {
+      "type": "EXHIBITS",
+      "source": "ref:parkinsonian",
+      "target": "TREMOR_REST_4_6HZ"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "ref:parkinsonian",
+      "target": "MOTOR_DECREMENT_HIGH"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "ref:parkinsonian",
+      "target": "MOTOR_CADENCE_LOW"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "ref:parkinsonian",
+      "target": "VOICE_JITTER_ELEVATED"
+    },
+    {
+      "type": "INDICATES",
+      "score": 100.0,
+      "source": "ref:parkinsonian",
+      "target": "SYNDROME_PARKINSONIAN"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "ref:face_fast",
+      "target": "FACE_LOWER_PARESIS"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "ref:face_fast",
+      "target": "VOICE_JITTER_ELEVATED"
+    },
+    {
+      "type": "INDICATES",
+      "score": 95.0,
+      "source": "ref:face_fast",
+      "target": "SYNDROME_CENTRAL_STROKE"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "ref:essential_tremor",
+      "target": "TREMOR_ACTION_6_12HZ"
+    },
+    {
+      "type": "INDICATES",
+      "score": 88.0,
+      "source": "ref:essential_tremor",
+      "target": "SYNDROME_ESSENTIAL_TREMOR"
+    },
+    {
+      "type": "HAS_SESSION",
+      "source": "patient:7969d68e",
+      "target": "session:307f1544"
+    },
+    {
+      "type": "HAS_SESSION",
+      "source": "patient:7969d68e",
+      "target": "session:b8b87867"
+    },
+    {
+      "type": "HAS_SESSION",
+      "source": "patient:7969d68e",
+      "target": "session:0d6d46ef"
+    },
+    {
+      "type": "HAS_SESSION",
+      "source": "patient:7969d68e",
+      "target": "session:5de15c83"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:307f1544",
+      "target": "TREMOR_REST_4_6HZ"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:307f1544",
+      "target": "FACE_LOWER_PARESIS"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:307f1544",
+      "target": "VOICE_JITTER_ELEVATED"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:307f1544",
+      "target": "MOTOR_DECREMENT_HIGH"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:307f1544",
+      "target": "MOTOR_CADENCE_LOW"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:307f1544",
+      "target": "TACHYCARDIA_RESTING"
+    },
+    {
+      "type": "INDICATES",
+      "score": 100.0,
+      "source": "session:307f1544",
+      "target": "SYNDROME_AUTONOMIC_DYSREG"
+    },
+    {
+      "type": "INDICATES",
+      "score": 100.0,
+      "source": "session:307f1544",
+      "target": "SYNDROME_CENTRAL_STROKE"
+    },
+    {
+      "type": "INDICATES",
+      "score": 100.0,
+      "source": "session:307f1544",
+      "target": "SYNDROME_PARKINSONIAN"
+    },
+    {
+      "type": "NEXT_SESSION",
+      "dt_sec": 161.028492,
+      "delta": {
+        "motor.tap_frequency": 0.0,
+        "motor.decrement": 0.0,
+        "motor.rhythm_cv": 0.0,
+        "tremor.f_dom": 0.0,
+        "tremor.rms": 0.0,
+        "tremor.concentration": 0.0,
+        "voice.hnr": 0.0,
+        "voice.f0": 0.0,
+        "voice.jitter": 0.0,
+        "voice.shimmer": 0.0,
+        "facial.smile": 0.0,
+        "facial.brow": 0.0,
+        "facial.asi": 0.0,
+        "rppg.coverage": 0.0,
+        "rppg.roi_spread": 0.0,
+        "rppg.bpm": 0.0,
+        "rppg.concentration": 0.0
+      },
+      "trend": "СТАБИЛЬНО",
+      "delta_summary": "СТАБИЛЬНО",
+      "source": "session:307f1544",
+      "target": "session:b8b87867"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:b8b87867",
+      "target": "TREMOR_REST_4_6HZ"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:b8b87867",
+      "target": "FACE_LOWER_PARESIS"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:b8b87867",
+      "target": "VOICE_JITTER_ELEVATED"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:b8b87867",
+      "target": "MOTOR_DECREMENT_HIGH"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:b8b87867",
+      "target": "MOTOR_CADENCE_LOW"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:b8b87867",
+      "target": "TACHYCARDIA_RESTING"
+    },
+    {
+      "type": "INDICATES",
+      "score": 100.0,
+      "source": "session:b8b87867",
+      "target": "SYNDROME_AUTONOMIC_DYSREG"
+    },
+    {
+      "type": "INDICATES",
+      "score": 100.0,
+      "source": "session:b8b87867",
+      "target": "SYNDROME_CENTRAL_STROKE"
+    },
+    {
+      "type": "INDICATES",
+      "score": 100.0,
+      "source": "session:b8b87867",
+      "target": "SYNDROME_PARKINSONIAN"
+    },
+    {
+      "type": "NEXT_SESSION",
+      "dt_sec": 2909.586157,
+      "delta": {
+        "facial.brow": 0.0,
+        "facial.smile": 0.0,
+        "facial.asi": 0.0,
+        "voice.shimmer": 0.0,
+        "voice.hnr": 0.0,
+        "voice.jitter": 0.0,
+        "voice.f0": 0.0,
+        "rppg.roi_spread": 0.0,
+        "rppg.coverage": 0.0,
+        "rppg.concentration": 0.0,
+        "rppg.bpm": 0.0,
+        "motor.tap_frequency": 0.0,
+        "motor.rhythm_cv": 0.0,
+        "motor.decrement": 0.0,
+        "tremor.f_dom": 0.0,
+        "tremor.rms": 0.0,
+        "tremor.concentration": 0.0
+      },
+      "trend": "СТАБИЛЬНО",
+      "delta_summary": "СТАБИЛЬНО",
+      "source": "session:b8b87867",
+      "target": "session:0d6d46ef"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:0d6d46ef",
+      "target": "TREMOR_REST_4_6HZ"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:0d6d46ef",
+      "target": "FACE_LOWER_PARESIS"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:0d6d46ef",
+      "target": "VOICE_JITTER_ELEVATED"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:0d6d46ef",
+      "target": "MOTOR_DECREMENT_HIGH"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:0d6d46ef",
+      "target": "MOTOR_CADENCE_LOW"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:0d6d46ef",
+      "target": "TACHYCARDIA_RESTING"
+    },
+    {
+      "type": "INDICATES",
+      "score": 100.0,
+      "source": "session:0d6d46ef",
+      "target": "SYNDROME_AUTONOMIC_DYSREG"
+    },
+    {
+      "type": "INDICATES",
+      "score": 100.0,
+      "source": "session:0d6d46ef",
+      "target": "SYNDROME_CENTRAL_STROKE"
+    },
+    {
+      "type": "INDICATES",
+      "score": 100.0,
+      "source": "session:0d6d46ef",
+      "target": "SYNDROME_PARKINSONIAN"
+    },
+    {
+      "type": "NEXT_SESSION",
+      "dt_sec": 138.441581,
+      "delta": {
+        "motor.tap_frequency": 0.0,
+        "motor.decrement": 0.0,
+        "motor.rhythm_cv": 0.0,
+        "tremor.rms": 0.0,
+        "tremor.f_dom": 0.0,
+        "tremor.concentration": 0.0,
+        "facial.asi": 0.0,
+        "facial.brow": 0.0,
+        "facial.smile": 0.0,
+        "rppg.coverage": 0.0,
+        "rppg.concentration": 0.0,
+        "rppg.roi_spread": 0.0,
+        "rppg.bpm": 0.0,
+        "voice.jitter": 0.0,
+        "voice.shimmer": 0.0,
+        "voice.hnr": 0.0,
+        "voice.f0": 0.0
+      },
+      "trend": "СТАБИЛЬНО",
+      "delta_summary": "СТАБИЛЬНО",
+      "source": "session:0d6d46ef",
+      "target": "session:5de15c83"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:5de15c83",
+      "target": "TREMOR_REST_4_6HZ"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:5de15c83",
+      "target": "FACE_LOWER_PARESIS"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:5de15c83",
+      "target": "VOICE_JITTER_ELEVATED"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:5de15c83",
+      "target": "MOTOR_DECREMENT_HIGH"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:5de15c83",
+      "target": "MOTOR_CADENCE_LOW"
+    },
+    {
+      "type": "EXHIBITS",
+      "source": "session:5de15c83",
+      "target": "TACHYCARDIA_RESTING"
+    },
+    {
+      "type": "INDICATES",
+      "score": 100.0,
+      "source": "session:5de15c83",
+      "target": "SYNDROME_AUTONOMIC_DYSREG"
+    },
+    {
+      "type": "INDICATES",
+      "score": 100.0,
+      "source": "session:5de15c83",
+      "target": "SYNDROME_CENTRAL_STROKE"
+    },
+    {
+      "type": "INDICATES",
+      "score": 100.0,
+      "source": "session:5de15c83",
+      "target": "SYNDROME_PARKINSONIAN"
+    }
+  ]
+}

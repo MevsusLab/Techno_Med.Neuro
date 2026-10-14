@@ -261,6 +261,12 @@ class SessionDiagnostics(QObject):
         del self.assessments[module]
         self._schedule()
 
+    def reset(self):
+        if self.closing:
+            return
+        self.assessments.clear()
+        self._schedule()
+
     def _schedule(self):
         self.revision += 1
         self.result = None
