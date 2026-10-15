@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 import time
 import traceback
 import numpy as np
@@ -15,10 +16,9 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint
 from PyQt6.QtGui import QFont, QColor, QImage, QPixmap
-from PyQt6.QtWidgets import QLabel as PlainLabel
 from tremor_engine import TremorEngine
 from capture_worker import ProcessCaptureWorker as CaptureWorker
-from protocol_panel import ProtocolPanel, FacialProtocolPanel, RPPGProtocolPanel, VoiceProtocolPanel
+from protocol_panel import ProtocolPanel, FacialProtocolPanel, RPPGProtocolPanel, VoiceProtocolPanel, WARNING_TRANSLATIONS
 from face_capture import FaceCaptureWorker
 from facial_engine import analyze_stage, compare_stages, PAIRS
 from rppg_capture import RPPGCaptureWorker
@@ -45,7 +45,6 @@ from session_diagnostics import SessionDiagnostics
 from cdss_dashboard import CDSSDashboard
 from patient_graph import TemporalPatientGraph
 from patient_cards_drawer import PatientCardsDrawer
-from i18n_ru import RussianLabel as QLabel, ru
 
 
 BG = "#FFFFFF"
@@ -218,7 +217,7 @@ def graph_area(title="SIGNAL"):
     lbl.setStyleSheet(f"color: {TEXT_MUTED}; border: none; letter-spacing: 1px;")
     lay.addWidget(lbl)
     lay.addStretch()
-    placeholder = QLabel("No data")
+    placeholder = QLabel("Нет данных")
     placeholder.setFont(f_mono(9))
     placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
     placeholder.setStyleSheet(f"color: {BORDER}; border: none;")
@@ -228,7 +227,7 @@ def graph_area(title="SIGNAL"):
 
 
 def cmd_button(text, primary=True):
-    btn = QPushButton(ru(text))
+    btn = QPushButton(text)
     btn.setFont(f_sans(10, True))
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     btn.setFixedHeight(30)
@@ -339,7 +338,7 @@ class NavBar(QWidget):
         lay.addWidget(sep)
         self.buttons = []
         for i, label in enumerate(tabs):
-            btn = QPushButton(ru(label))
+            btn = QPushButton(label)
             btn.setFont(f_sans(9))
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setCheckable(True)
@@ -481,16 +480,16 @@ class DashboardPage(QWidget):
         layout.addWidget(title)
         top = QHBoxLayout()
         top.setSpacing(12)
-        info_panel, info_lay = panel("Platform Information")
+        info_panel, info_lay = panel("Сведения о платформе")
         info_grid = QGridLayout()
         info_grid.setSpacing(4)
         for r, (k, v) in enumerate([
-            ("System", "TecnoMedNeuro Screening Suite"),
-            ("Version", "0.1.0-alpha"),
-            ("Backend", "MediaPipe + SciPy DSP"),
-            ("Input", "USB Webcam + Microphone"),
-            ("Modules", "6 исследовательских модулей"),
-            ("Framework", "PyQt6 / OpenCV"),
+            ("Система", "TecnoMedNeuro Screening Suite"),
+            ("Версия", "0.1.0-alpha"),
+            ("Бэкенд", "MediaPipe + SciPy DSP"),
+            ("Ввод", "USB-вебкамера + микрофон"),
+            ("Модули", "6 исследовательских модулей"),
+            ("Фреймворк", "PyQt6 / OpenCV"),
         ]):
             kl = QLabel(k)
             kl.setFont(f_sans(9, True))
@@ -503,7 +502,7 @@ class DashboardPage(QWidget):
         info_lay.addLayout(info_grid)
         info_lay.addStretch()
         top.addWidget(info_panel)
-        mod_panel, mod_lay = panel("Module Registry")
+        mod_panel, mod_lay = panel("Реестр модулей")
         table = QTableWidget(6, 3)
         table.setHorizontalHeaderLabels(["МОДУЛЬ", "ТИП", "СТАТУС"])
         table.horizontalHeader().setFont(f_sans(8, True))
@@ -598,6 +597,27 @@ class VideoLabel(QLabel):
         self._scale_frame()
 
 
+def _translate_tremor_error(msg: str) -> str:
+    if not msg:
+        return msg
+    m = re.match(r'Hand tracking was interrupted at the start or end \(start:\s*([\d.]+)s;\s*end:\s*([\d.]+)s\)\.', msg)
+    if m:
+        return f"Отслеживание кисти прерывалось в начале или конце (начало: {m.group(1)} с; конец: {m.group(2)} с)."
+    m = re.match(r'Hand tracking was interrupted \(largest gap:\s*([\d.]+)s;\s*limit:\s*0\.200s;\s*coverage:\s*([\d.]+)%\)\.', msg)
+    if m:
+        return f"Отслеживание кисти прерывалось (наибольший интервал: {m.group(1)} с; предел: 0,200 с; покрытие: {m.group(2)}%)."
+    m = re.match(r'Only ([\d.]+)s / (\d+) hand samples\. Record at least 10 seconds\.', msg)
+    if m:
+        return f"Всего {m.group(1)} с / {m.group(2)} отсчётов кисти. Запишите не менее десяти секунд."
+    m = re.match(r'Tracking rate is ([\d.]+) samples/s; at least 25 are required\.', msg)
+    if m:
+        return f"Частота отсчётов {m.group(1)}/с; требуется не менее 25/с."
+    m = re.match(r'Largest tracking gap \(([\d.]+)s\) leaves less than 3 Hz of usable bandwidth\.', msg)
+    if m:
+        return f"Наибольший интервал отслеживания ({m.group(1)} с) оставляет менее 3 Гц доступного диапазона."
+    return msg
+
+
 class TremorPage(QWidget):
     capture_finished = pyqtSignal()
 
@@ -630,7 +650,7 @@ class TremorPage(QWidget):
         layout.setSpacing(8)
 
         header = QHBoxLayout()
-        title = QLabel("HAND MOTION ANALYSIS")
+        title = QLabel("ИССЛЕДОВАНИЕ ДВИЖЕНИЙ КИСТИ")
         title.setFont(f_sans(13, True))
         title.setStyleSheet(f"color: {TEXT};")
         header.addWidget(title)
@@ -639,7 +659,7 @@ class TremorPage(QWidget):
         header.addWidget(self.page_badge)
         layout.addLayout(header)
 
-        sub = QLabel("Research prototype  |  1-12 Hz (camera-dependent)  |  Hand held still  |  Not a medical diagnosis")
+        sub = QLabel("Исследовательский прототип  |  1–12 Гц (зависит от камеры)  |  Рука неподвижна  |  Не медицинский диагноз")
         sub.setFont(f_mono(8))
         sub.setStyleSheet(f"color: {TEXT_MUTED};")
         layout.addWidget(sub)
@@ -655,7 +675,7 @@ class TremorPage(QWidget):
         self.capture_layout = QVBoxLayout(self.capture_area)
         self.capture_layout.setContentsMargins(0, 0, 0, 0)
         self.capture_layout.setSpacing(0)
-        self.video_label = VideoLabel("HAND TRACKING FEED\n\n640x480 @ 30fps")
+        self.video_label = VideoLabel("ВИДЕОПОТОК ОТСЛЕЖИВАНИЯ КИСТИ\n\n640x480 @ 30fps")
         self.video_label.setMinimumSize(480, 0)
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_label.setFont(f_mono(10))
@@ -669,15 +689,15 @@ class TremorPage(QWidget):
 
         controls = QHBoxLayout()
         controls.setSpacing(6)
-        self.btn_start = cmd_button("START CAPTURE")
+        self.btn_start = cmd_button("НАЧАТЬ ЗАПИСЬ")
         self.btn_start.clicked.connect(lambda checked=False: self._start())
-        self.btn_video = cmd_button('UPLOAD VIDEO FILE', primary=False)
+        self.btn_video = cmd_button('ЗАГРУЗИТЬ ВИДЕОФАЙЛ', primary=False)
         self.btn_video.setToolTip('Видео: неподвижная кисть в кадре не менее 10,5 секунд; предпочтительно 15 секунд, 25 кадр/с и выше.')
         self.btn_video.clicked.connect(self._upload_video)
-        self.btn_stop = cmd_button("STOP", primary=False)
+        self.btn_stop = cmd_button("СТОП", primary=False)
         self.btn_stop.clicked.connect(lambda checked=False: self._stop())
         self.btn_stop.setEnabled(False)
-        self.btn_reset = cmd_button("RESET", primary=False)
+        self.btn_reset = cmd_button("СБРОС", primary=False)
         self.btn_reset.clicked.connect(lambda checked=False: self._reset())
         controls.addWidget(self.btn_start)
         controls.addWidget(self.btn_video)
@@ -688,7 +708,7 @@ class TremorPage(QWidget):
         self.progress = thin_progress()
         left.addWidget(self.progress)
 
-        self.info_label = QLabel("Samples: 0  |  FPS: --  |  0.0s / 15.0s")
+        self.info_label = QLabel("Отсчёты: 0  |  Частота: --  |  0,0 с / 15,0 с")
         self.info_label.setFont(f_mono(8))
         self.info_label.setStyleSheet(f"color: {TEXT_MUTED};")
         self.info_label.setWordWrap(True)
@@ -699,20 +719,20 @@ class TremorPage(QWidget):
         right = QVBoxLayout()
         right.setSpacing(8)
 
-        m_frame, m_lay, self.analysis_badge = panel_with_badge("Analysis", "WAITING", TEXT_MUTED)
+        m_frame, m_lay, self.analysis_badge = panel_with_badge("Анализ", "WAITING", TEXT_MUTED)
         m_grid = QGridLayout()
         m_grid.setSpacing(2)
-        self.m_freq = MetricDisplay("Dominant Frequency", "---", "Hz")
-        self.m_amp = MetricDisplay("Motion RMS (image)", "---", "px")
-        self.m_class = MetricDisplay("Signal Assessment", "---")
+        self.m_freq = MetricDisplay("Основная частота", "---", "Гц")
+        self.m_amp = MetricDisplay("СКЗ движения (кадр)", "---", "px")
+        self.m_class = MetricDisplay("Оценка сигнала", "---")
         self.m_class.val.setFont(f_mono(11, True))
-        self.m_conf = MetricDisplay("Peak Concentration (+/-1 Hz)", "---", "%")
+        self.m_conf = MetricDisplay("Концентрация пика (±1 Гц)", "---", "%")
         m_grid.addWidget(self.m_freq, 0, 0)
         m_grid.addWidget(self.m_amp, 0, 1)
         m_grid.addWidget(self.m_class, 1, 0)
         m_grid.addWidget(self.m_conf, 1, 1)
         m_lay.addLayout(m_grid)
-        self.analysis_detail = QLabel("Hold one hand in view. Preparation comes before the 15-second recording.")
+        self.analysis_detail = QLabel("Держите одну кисть в поле зрения камеры. Перед 15-секундной записью будет подготовка.")
         self.analysis_detail.setFont(f_sans(9))
         self.analysis_detail.setWordWrap(True)
         self.analysis_detail.setTextFormat(Qt.TextFormat.PlainText)
@@ -798,12 +818,12 @@ class TremorPage(QWidget):
         self._video_elapsed = 0.0
         self.engine.reset()
         self.progress.setValue(0)
-        self.info_label.setText("Samples: 0  |  FPS: --  |  0.0s / 15.0s")
+        self.info_label.setText("Отсчёты: 0  |  Частота: --  |  0,0 с / 15,0 с")
         self.m_freq.set_value("---")
         self.m_amp.set_value("---")
         self.m_class.set_value("---", TEXT)
         self.m_conf.set_value("---")
-        self.analysis_detail.setText("Hold one hand in view. Preparation comes before the 15-second recording.")
+        self.analysis_detail.setText("Держите одну кисть в поле зрения камеры. Перед 15-секундной записью будет подготовка.")
         self.psd_canvas.clear_plot()
         self.wave_canvas.clear_plot()
         set_badge(self.page_badge, "IDLE", TEXT_MUTED)
@@ -816,7 +836,7 @@ class TremorPage(QWidget):
             self.status_bar.update_badge("MEDIAPIPE", "NOT LOADED", TEXT_MUTED)
             self.status_bar.update_badge("DSP", "STANDBY", TEXT_MUTED)
         self.video_label.clear()
-        self.video_label.setText("HAND TRACKING FEED\n\n640x480 @ 30fps")
+        self.video_label.setText("ВИДЕОПОТОК ОТСЛЕЖИВАНИЯ КИСТИ\n\n640x480 @ 30fps")
         self.video_label.setStyleSheet(f"background: {NAVY}; border: 1px solid {BORDER}; color: #475569;")
 
     def _on_status(self, status):
@@ -851,7 +871,7 @@ class TremorPage(QWidget):
         self.m_conf.set_value("---")
         self.m_class.set_value("CAPTURE FAILED", RED)
         self.video_label.clear()
-        self.video_label.setText("CAPTURE FAILED")
+        self.video_label.setText("СБОЙ ЗАПИСИ")
         if self.status_bar:
             self.status_bar.update_badge("CAM", "STOPPING", AMBER)
             self.status_bar.update_badge("DSP", "STANDBY", TEXT_MUTED)
@@ -872,7 +892,7 @@ class TremorPage(QWidget):
             if self.recording:
                 set_badge(self.page_badge, "RECORDING", GREEN)
                 set_badge(self.analysis_badge, "RECORDING", GREEN)
-                self.analysis_detail.setText("Recording. Keep the hand fully visible until capture finishes.")
+                self.analysis_detail.setText("Идёт запись. Держите кисть полностью в поле зрения до завершения записи.")
         old_count = self.frame_count
         for acquired, x, y in samples:
             if (self._stop_time is not None and self._source_kind == 'camera'
@@ -893,9 +913,9 @@ class TremorPage(QWidget):
             self.progress.setValue(int(elapsed / self.record_duration * 100))
             fps_est = self.frame_count / max(elapsed, 0.001)
             self.info_label.setText(
-                f"Samples: {self.engine.count}  |  FPS: {fps_est:.0f}  |  "
-                f"{elapsed:.1f}s / {self.record_duration:.0f}s"
-                + ("  |  NO HAND" if latest is not None and latest[2] is None else "")
+                f"Отсчёты: {self.engine.count}  |  Частота: {fps_est:.0f}  |  "
+                f"{elapsed:.1f} с / {self.record_duration:.0f} с"
+                + ("  |  КИСТЬ НЕ ОБНАРУЖЕНА" if latest is not None and latest[2] is None else "")
             )
             if self.frame_count // 15 > old_count // 15 and self.engine.count > 10:
                 self._update_live_wave()
@@ -942,7 +962,7 @@ class TremorPage(QWidget):
             self._on_failure(worker.error)
         elif worker.reason == "stopped" and self._stop_time is None and not self._closing and not self._deadline_requested:
             self._analyze_on_finish = False
-            self._failure = "Capture ended before the recording was complete"
+            self._failure = "Запись завершена до окончания времени"
             set_badge(self.page_badge, "CAPTURE STOPPED", AMBER)
             set_badge(self.analysis_badge, "INCOMPLETE", AMBER)
             self.analysis_detail.setText(self._failure)
@@ -953,13 +973,13 @@ class TremorPage(QWidget):
             self.record_end = self._stop_time if self._stop_time is not None else self.record_end
             self.video_label.clear()
             if self.record_start is not None:
-                self.video_label.setText("RECORDING COMPLETE")
+                self.video_label.setText("ЗАПИСЬ ЗАВЕРШЕНА")
                 self._run_analysis()
             else:
-                self.video_label.setText("CAPTURE CANCELLED")
+                self.video_label.setText("ЗАПИСЬ ОТМЕНЕНА")
                 set_badge(self.page_badge, "IDLE", TEXT_MUTED)
                 set_badge(self.analysis_badge, "WAITING", TEXT_MUTED)
-                self.info_label.setText("Capture cancelled before the first frame")
+                self.info_label.setText("Запись отменена до первого кадра")
 
     def _update_live_wave(self):
         t = np.array(self.engine.timestamps)
@@ -971,9 +991,9 @@ class TremorPage(QWidget):
         ax.clear()
         self.wave_canvas._style_axes()
         ax.plot(t_rel, y_centered, color=NAVY, linewidth=0.6)
-        ax.set_xlabel('Time (s)', fontsize=7, color=TEXT_DIM)
-        ax.set_ylabel('Y displacement (px)', fontsize=7, color=TEXT_DIM)
-        ax.set_title('LIVE WAVEFORM', fontsize=8, fontweight='bold', color=TEXT_DIM, loc='left')
+        ax.set_xlabel('Время (с)', fontsize=7, color=TEXT_DIM)
+        ax.set_ylabel('Смещение Y (px)', fontsize=7, color=TEXT_DIM)
+        ax.set_title('ТЕКУЩАЯ ОСЦИЛЛОГРАММА', fontsize=8, fontweight='bold', color=TEXT_DIM, loc='left')
         self.wave_canvas.draw_idle()
 
     def _run_analysis(self):
@@ -987,8 +1007,8 @@ class TremorPage(QWidget):
         traceback.print_exc()
         set_badge(self.page_badge, "ANALYSIS ERROR", RED)
         set_badge(self.analysis_badge, "FAILED", RED)
-        self.analysis_detail.setText(f"Analysis failed: {type(exc).__name__}: {exc}. Capture can be retried.")
-        self.video_label.setText("ANALYSIS FAILED")
+        self.analysis_detail.setText(f"Сбой анализа: {type(exc).__name__}: {exc}. Запись можно повторить.")
+        self.video_label.setText("СБОЙ АНАЛИЗА")
         self.m_freq.set_value("---")
         self.m_amp.set_value("---")
         self.m_conf.set_value("---")
@@ -1006,19 +1026,20 @@ class TremorPage(QWidget):
             set_badge(self.page_badge, "RETRY", AMBER)
             set_badge(self.analysis_badge, "INVALID CAPTURE", AMBER)
             self.m_class.set_value("INVALID CAPTURE", AMBER)
-            self.info_label.setText(self.engine.last_error)
-            self.analysis_detail.setText(self.engine.last_error)
+            err_ru = _translate_tremor_error(self.engine.last_error)
+            self.info_label.setText(err_ru)
+            self.analysis_detail.setText(err_ru)
             quality = self.engine.last_quality
             if 'fs' in quality:
                 self.info_label.setText(
-                    f"Samples: {quality['samples']}  |  Rate: {quality['fs']:.1f}/s  |  "
-                    f"Coverage: {quality['coverage'] * 100:.0f}%  |  Max gap: {quality['max_gap_sec']:.3f}s"
+                    f"Отсчёты: {quality['samples']}  |  Частота: {quality['fs']:.1f}/с  |  "
+                    f"Покрытие: {quality['coverage'] * 100:.0f}%  |  Наибольший интервал: {quality['max_gap_sec']:.3f} с"
                 )
             self.psd_canvas.clear_plot()
-            self.psd_canvas.ax.text(0.5, 0.5, "Spectrum withheld: invalid capture", ha='center',
+            self.psd_canvas.ax.text(0.5, 0.5, "Спектр скрыт: непригодная запись", ha='center',
                                     va='center', transform=self.psd_canvas.ax.transAxes, color=TEXT_DIM, fontsize=9)
             self.psd_canvas.draw_idle()
-            self.wave_canvas.ax.set_title('REJECTED CAPTURE / RAW PREVIEW', fontsize=8,
+            self.wave_canvas.ax.set_title('ОТКЛОНЁННАЯ ЗАПИСЬ / ИСХОДНЫЙ СИГНАЛ', fontsize=8,
                                           fontweight='bold', color=AMBER, loc='left')
             self.wave_canvas.draw_idle()
             if self.status_bar:
@@ -1036,17 +1057,17 @@ class TremorPage(QWidget):
         limited = results['max_freq'] < 11.95
         if limited:
             self.analysis_detail.setText(
-                f"Limited to 1-{results['max_freq']:.1f} Hz by a {results['max_gap_sec']:.3f}s frame gap. "
-                + ("Energy is strongest outside the usable band. " if results.get('above_band') else "")
-                + "Faster motion cannot be assessed; retry for a wider range. Not a diagnosis."
+                f"Диапазон ограничен 1–{results['max_freq']:.1f} Гц из-за интервала между кадрами {results['max_gap_sec']:.3f} с. "
+                + ("Энергия наибольшая за пределами диапазона. " if results.get('above_band') else "")
+                + "Более быстрые движения не оценивались; повторите тест для расширения диапазона. Не диагноз."
             )
         else:
-            self.analysis_detail.setText("Image-plane motion only. A spectral peak is not a diagnosis.")
+            self.analysis_detail.setText("Движение только в плоскости изображения. Пик спектра не является диагнозом.")
         self.info_label.setText(
-            f"Samples: {results['samples']}  |  Rate: {results['fs']:.1f}/s  |  "
-            f"Coverage: {results['coverage'] * 100:.0f}%  |  "
-            f"Resolution: {results['resolution_hz']:.2f} Hz  |  "
-            f"Max gap: {results['max_gap_sec']:.3f}s  |  Band: 1-{results['max_freq']:.1f} Hz"
+            f"Отсчёты: {results['samples']}  |  Частота: {results['fs']:.1f}/с  |  "
+            f"Покрытие: {results['coverage'] * 100:.0f}%  |  "
+            f"Разрешение: {results['resolution_hz']:.2f} Гц  |  "
+            f"Наибольший интервал: {results['max_gap_sec']:.3f} с  |  Диапазон: 1–{results['max_freq']:.1f} Гц"
         )
         if self._source_kind == 'video':
             self.info_label.setText(f'Видео: {os.path.basename(self._source_path)}  |  ' + self.info_label.text())
@@ -1081,9 +1102,9 @@ class TremorPage(QWidget):
         if dom is not None:
             ax.axvline(dom, color=RED, linewidth=1, linestyle='--', alpha=0.8)
 
-        ax.set_xlabel('Frequency (Hz)', fontsize=7, color=TEXT_DIM)
-        ax.set_ylabel('PSD (px²/Hz)', fontsize=7, color=TEXT_DIM)
-        ax.set_title('COMBINED X + Y PSD (WELCH)', fontsize=8,
+        ax.set_xlabel('Частота (Гц)', fontsize=7, color=TEXT_DIM)
+        ax.set_ylabel('СПМ (px²/Гц)', fontsize=7, color=TEXT_DIM)
+        ax.set_title('ОБЪЕДИНЁННАЯ СПМ X + Y (ВЕЛЧ)', fontsize=8,
                       fontweight='bold', color=TEXT_DIM, loc='left')
         ax.set_xlim(0, r['max_freq'])
         self.psd_canvas.draw()
@@ -1097,15 +1118,15 @@ class TremorPage(QWidget):
         raw = r['raw_y']
         filt = r['filtered_y']
 
-        ax.plot(t, raw, color='#CBD5E1', linewidth=0.4, label='Y (detrended)')
-        ax.plot(t, filt, color=NAVY, linewidth=0.7, label='Y filtered')
-        ax.plot(t, r['filtered_x'], color='#2563EB', linewidth=0.7, label='X filtered')
+        ax.plot(t, raw, color='#CBD5E1', linewidth=0.4, label='Y (без тренда)')
+        ax.plot(t, filt, color=NAVY, linewidth=0.7, label='Y фильтрованный')
+        ax.plot(t, r['filtered_x'], color='#2563EB', linewidth=0.7, label='X фильтрованный')
         ax.axvspan(t[0], min(1.0, t[-1]), color='#CBD5E1', alpha=0.2)
         ax.axvspan(max(t[0], t[-1] - 1), t[-1], color='#CBD5E1', alpha=0.2)
 
-        ax.set_xlabel('Time (s)', fontsize=7, color=TEXT_DIM)
-        ax.set_ylabel('Displacement (px)', fontsize=7, color=TEXT_DIM)
-        ax.set_title('MOTION WAVEFORM', fontsize=8, fontweight='bold', color=TEXT_DIM, loc='left')
+        ax.set_xlabel('Время (с)', fontsize=7, color=TEXT_DIM)
+        ax.set_ylabel('Смещение (px)', fontsize=7, color=TEXT_DIM)
+        ax.set_title('ОСЦИЛЛОГРАММА ДВИЖЕНИЯ', fontsize=8, fontweight='bold', color=TEXT_DIM, loc='left')
         ax.legend(fontsize=6, loc='upper right', framealpha=0.7)
         self.wave_canvas.draw()
 
@@ -1142,7 +1163,7 @@ class FacialPage(QWidget):
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(8)
         header = QHBoxLayout()
-        title = QLabel("FACIAL SYMMETRY / FACE COMPONENT OF FAST")
+        title = QLabel("СИММЕТРИЯ ЛИЦА / ЛИЦЕВОЙ КОМПОНЕНТ FAST")
         title.setFont(f_sans(13, True))
         title.setStyleSheet(f"color: {TEXT};")
         header.addWidget(title)
@@ -1154,13 +1175,13 @@ class FacialPage(QWidget):
         body.setSpacing(8)
         left = QVBoxLayout()
         left.setSpacing(8)
-        self.guidance = QLabel('One face, frontal pose, consistent distance. Follow the expression instructions here.')
+        self.guidance = QLabel('Одно лицо в кадре, прямое положение, постоянное расстояние. Следуйте подсказкам мимических проб.')
         self.guidance.setWordWrap(True)
         self.guidance.setFont(f_mono(10, True))
         self.guidance.setTextFormat(Qt.TextFormat.PlainText)
         self.guidance.setStyleSheet(f'color: {NAVY}; background: {BG_ALT}; border: 1px solid {BORDER}; padding: 6px;')
         left.addWidget(self.guidance)
-        self.video = VideoLabel('FACE MESH / REST -> SMILE -> RAISE EYEBROWS')
+        self.video = VideoLabel('СЕТКА ЛИЦА / ПОКОЙ -> УЛЫБКА -> ПОДНЯТЬ БРОВИ')
         self.video.setMinimumSize(480, 0)
         self.video.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video.setStyleSheet(f'background: {NAVY}; color: #94A3B8; border: 1px solid {BORDER};')
@@ -1177,11 +1198,11 @@ class FacialPage(QWidget):
         left.addWidget(self.capture_area, 1)
         controls = QHBoxLayout()
         controls.setSpacing(6)
-        self.start = cmd_button('START FACIAL TEST')
-        self.upload_video = cmd_button('UPLOAD VIDEO FILE', primary=False)
+        self.start = cmd_button('НАЧАТЬ ТЕСТ МИМИКИ')
+        self.upload_video = cmd_button('ЗАГРУЗИТЬ ВИДЕОФАЙЛ', primary=False)
         self.upload_video.setToolTip('Видео 15 секунд: покой 0–5 с, улыбка 5–10 с, поднятие бровей 10–15 с.')
-        self.stop = cmd_button('STOP', primary=False)
-        self.reset = cmd_button('RESET', primary=False)
+        self.stop = cmd_button('СТОП', primary=False)
+        self.reset = cmd_button('СБРОС', primary=False)
         self.start.clicked.connect(self._start)
         self.upload_video.clicked.connect(self._upload_video)
         self.stop.clicked.connect(self._stop)
@@ -1197,10 +1218,10 @@ class FacialPage(QWidget):
         body.addLayout(left, 3)
         right = QVBoxLayout()
         right.setSpacing(8)
-        idx_panel, idx_lay = panel("Asymmetry Index")
-        self.index = MetricDisplay('Normalized geometric error', '---', '%')
+        idx_panel, idx_lay = panel("Индекс асимметрии")
+        self.index = MetricDisplay('Нормированная геом. ошибка', '---', '%')
         idx_lay.addWidget(self.index)
-        self.verdict = QLabel('Percentage of eye-corner span; not a probability of paresis or stroke.')
+        self.verdict = QLabel('Процент от расстояния между уголками глаз; не вероятность пареза или инсульта.')
         self.verdict.setWordWrap(True)
         self.verdict.setTextFormat(Qt.TextFormat.PlainText)
         self.verdict.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -1208,19 +1229,19 @@ class FacialPage(QWidget):
         self.verdict.setStyleSheet(f"color: {TEXT_DIM}; border: none;")
         idx_lay.addWidget(self.verdict)
         right.addWidget(idx_panel)
-        det_panel, det_lay = panel("Bilateral Measurements")
+        det_panel, det_lay = panel("Двусторонние измерения")
         det_grid = QGridLayout()
         det_grid.setSpacing(2)
-        self.mouth = MetricDisplay('Smile excursion imbalance', '---', '%')
-        self.brow = MetricDisplay('Brow excursion imbalance', '---', '%')
-        self.eye = MetricDisplay('Rest eye aperture R / L', '---')
-        self.cheek = MetricDisplay('Cheek geometry error', '---', '%')
+        self.mouth = MetricDisplay('Дисбаланс улыбки', '---', '%')
+        self.brow = MetricDisplay('Дисбаланс бровей', '---', '%')
+        self.eye = MetricDisplay('Раскрытие глаз в покое П / Л', '---')
+        self.cheek = MetricDisplay('Геометрическая ошибка щёк', '---', '%')
         det_grid.addWidget(self.mouth, 0, 0)
         det_grid.addWidget(self.eye, 0, 1)
         det_grid.addWidget(self.brow, 1, 0)
         det_grid.addWidget(self.cheek, 1, 1)
         det_lay.addLayout(det_grid)
-        self.distances = QLabel('Axis distances R / L: awaiting capture')
+        self.distances = QLabel('Расстояния по осям П / Л: ожидание записи')
         self.distances.setWordWrap(True)
         self.distances.setFont(f_mono(8))
         self.distances.setStyleSheet(f'color: {TEXT_DIM}; border: none;')
@@ -1228,15 +1249,15 @@ class FacialPage(QWidget):
         right.addWidget(det_panel)
         self.map = PlotCanvas()
         map_header = QHBoxLayout()
-        map_header.addWidget(QLabel('DEVIATION MAP / EXPRESSION'))
+        map_header.addWidget(QLabel('КАРТА ОТКЛОНЕНИЙ / МИМИКА'))
         self.expression = QComboBox()
-        self.expression.addItems(['Rest', 'Smile', 'Brows'])
+        self.expression.addItems(['Покой', 'Улыбка', 'Брови'])
         self.expression.currentIndexChanged.connect(self._expression_changed)
         self.expression.setEnabled(False)
         map_header.addWidget(self.expression)
         right.addLayout(map_header)
         right.addWidget(self.map, 1)
-        disclaimer = QLabel('Research prototype only. Face observations are not the full FAST test and cannot diagnose or rule out stroke. Cheek landmarks do not measure nasolabial fold depth.')
+        disclaimer = QLabel('Только исследовательский прототип. Наблюдение за лицом не заменяет полный тест FAST и не может подтвердить или исключить инсульт. Точки щёк не измеряют глубину носогубной складки.')
         disclaimer.setWordWrap(True)
         disclaimer.setFont(f_mono(8))
         right.addWidget(disclaimer)
@@ -1300,10 +1321,10 @@ class FacialPage(QWidget):
         for metric in (self.index, self.mouth, self.brow, self.eye, self.cheek):
             metric.set_value('---')
         self.map.clear_plot()
-        self.video.setText('FACE MESH / REST -> SMILE -> RAISE EYEBROWS')
-        self.distances.setText('Axis distances R / L: awaiting capture')
-        self.guidance.setText('Face the camera directly and use a clear smile and brow raise.')
-        self.verdict.setText('Percentage of eye-corner span; not a probability of paresis or stroke.')
+        self.video.setText('СЕТКА ЛИЦА / ПОКОЙ -> УЛЫБКА -> ПОДНЯТЬ БРОВИ')
+        self.distances.setText('Расстояния по осям П / Л: ожидание записи')
+        self.guidance.setText('Смотрите прямо в камеру, чётко улыбнитесь и поднимите брови.')
+        self.verdict.setText('Процент от расстояния между уголками глаз; не вероятность пареза или инсульта.')
         self.verdict.setStyleSheet(f'color: {TEXT_DIM}; border: none;')
         self.start.setEnabled(self.worker is None and not self.closing)
         self.upload_video.setEnabled(self.worker is None and not self.closing)
@@ -1323,13 +1344,13 @@ class FacialPage(QWidget):
 
     def _capture_status(self, status):
         if not self.cancelled and self.worker is not None and not self.preview_seen:
-            self.guidance.setText('Face capture setup: ' + status)
+            self.guidance.setText('Подготовка видеозахвата лица: ' + status)
 
     def _capture_failed(self, message):
         if not self.cancelled:
             self.protocol_panel.clear()
             self.guidance.setText(message)
-            self.verdict.setText('CAPTURE ERROR: ' + message)
+            self.verdict.setText('ОШИБКА ЗАПИСИ: ' + message)
             self.verdict.setStyleSheet(f'color: {RED}; border: none;')
             set_badge(self.badge, 'CAPTURE ERROR', RED)
 
@@ -1345,7 +1366,12 @@ class FacialPage(QWidget):
             self.stage_bounds = latest['stage_bounds']
             self.stage_counts = latest['counts']
             self.stage_rejected = latest['rejected']
-            self.guidance.setText(latest['message'])
+            msg = latest['message']
+            if 'Smile clearly' in msg:
+                msg = 'Улыбнитесь и удерживайте улыбку / ИДЁТ ЗАПИСЬ'
+            elif 'Raise both eyebrows' in msg:
+                msg = 'Поднимите обе брови и удерживайте положение / ПОДГОТОВКА'
+            self.guidance.setText(msg)
             self.progress.setValue(int(latest['progress'] * 100))
             set_badge(self.badge, latest['stage'].upper(), GREEN)
             image = latest['image']
@@ -1374,7 +1400,7 @@ class FacialPage(QWidget):
                     count = self.stage_counts.get(stage, 0)
                     if count == 0 or self.stage_rejected.get(stage, 0) / count > 0.2:
                         rejected = self.stage_rejected.get(stage, 0)
-                        raise ValueError(f'{stage.upper()}: {len(selected)} accepted / {count} frames, {rejected} rejected. Repeat with stable lighting and frontal pose.')
+                        raise ValueError(f'{stage.upper()}: принято {len(selected)} / {count} кадров, отклонено {rejected}. Повторите при постоянном освещении и фронтальном положении головы.')
                     try:
                         stages[stage] = analyze_stage(selected, *self.stage_bounds[stage])
                     except ValueError as exc:
@@ -1394,33 +1420,34 @@ class FacialPage(QWidget):
                 self._expression_changed()
                 self.progress.setValue(100)
                 set_badge(self.badge, 'COMPLETE', GREEN)
+                stages_ru = {'rest': 'покой', 'smile': 'улыбка', 'brows': 'брови'}
                 self.guidance.setText(
-                    'Complete. Valid frames: ' + ' / '.join(f"{name}: {stages[name]['samples']}" for name in stages)
-                    + '. Geometric percentages are not clinical risk scores.'
+                    'Готово. Пригодные кадры: ' + ' / '.join(f"{stages_ru.get(name, name)} — {stages[name]['samples']}" for name in stages)
+                    + '. Геометрические проценты не являются оценкой клинического риска.'
                 )
                 if self.source_kind == 'video':
                     self.guidance.setText(f'Видео: {os.path.basename(self.source_path)}. ' + self.guidance.text())
-                self.verdict.setText('Measurements complete. Percentage of eye-corner span; not a probability of paresis or stroke.')
-                self.video.setText('RECORDING COMPLETE / SEE RESULTS')
+                self.verdict.setText('Измерения завершены. Процент от расстояния между уголками глаз не является вероятностью пареза или инсульта.')
+                self.video.setText('ЗАПИСЬ ЗАВЕРШЕНА / СМОТРИТЕ РЕЗУЛЬТАТЫ')
                 self.protocol_panel.set_results(result)
                 self.protocol_panel.reveal()
             else:
                 set_badge(self.badge, 'IDLE', TEXT_MUTED)
-                self.video.setText('CAPTURE CANCELLED')
+                self.video.setText('ЗАПИСЬ ОТМЕНЕНА')
         except Exception as exc:
             self.protocol_panel.clear()
             self.results = None
             self.expression.setEnabled(False)
             self.map.clear_plot()
-            self.distances.setText('No valid facial measurements available. Repeat capture.')
+            self.distances.setText('Нет пригодных измерений лица. Повторите запись.')
             for metric in (self.index, self.mouth, self.brow, self.eye, self.cheek):
                 metric.set_value('---')
             set_badge(self.badge, 'RETRY', AMBER)
             self.guidance.setText(str(exc))
-            self.verdict.setText('MEASUREMENT NOT AVAILABLE: ' + str(exc))
+            self.verdict.setText('ИЗМЕРЕНИЕ НЕДОСТУПНО: ' + str(exc))
             self.verdict.setStyleSheet(f'color: {AMBER}; border: none;')
-            self.video.setText('RECORDING ENDED / RETRY REQUIRED')
-            self.map.ax.text(0.5, 0.5, 'No valid result: see reason above', ha='center', va='center',
+            self.video.setText('ЗАПИСЬ ОКОНЧЕНА / ПОВТОРИТЕ ТЕСТ')
+            self.map.ax.text(0.5, 0.5, 'Нет результата: см. причину выше', ha='center', va='center',
                              transform=self.map.ax.transAxes, fontsize=9, color=TEXT_DIM)
             self.map.draw_idle()
             print(f'FACIAL measurement rejected: {exc}', file=sys.stderr)
@@ -1838,7 +1865,7 @@ class RPPGPage(QWidget):
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(8)
         header = QHBoxLayout()
-        title = QLabel("CONTACTLESS rPPG / HEART RATE ESTIMATE")
+        title = QLabel("БЕСКОНТАКТНАЯ rPPG / ОЦЕНКА ЧАСТОТЫ ПУЛЬСА")
         title.setFont(f_sans(13, True))
         title.setStyleSheet(f"color: {TEXT};")
         header.addWidget(title)
@@ -1846,7 +1873,7 @@ class RPPGPage(QWidget):
         self.badge = make_status_badge('IDLE', TEXT_MUTED)
         header.addWidget(self.badge)
         layout.addLayout(header)
-        sub = QLabel("Green-channel skin modulation | 0.75-3.0 Hz / 45-180 BPM | 30-second trial | Research estimate, not a clinical monitor")
+        sub = QLabel("Модуляция зелёного канала кожи | 0,75–3,0 Гц / 45–180 уд/мин | Проба 30 секунд | Исследовательская оценка, не клинический монитор")
         sub.setFont(f_mono(8))
         sub.setStyleSheet(f"color: {TEXT_MUTED};")
         layout.addWidget(sub)
@@ -1854,11 +1881,11 @@ class RPPGPage(QWidget):
         body.setSpacing(8)
         left = QVBoxLayout()
         left.setSpacing(8)
-        self.guidance = QLabel('Sit still, keep the forehead uncovered, use steady diffuse light. Avoid speaking during capture.')
+        self.guidance = QLabel('Сидите неподвижно, не закрывайте лоб, используйте ровный рассеянный свет. Во время записи избегайте разговора.')
         self.guidance.setWordWrap(True)
         self.guidance.setFont(f_mono(9))
         left.addWidget(self.guidance)
-        self.video = VideoLabel('SKIN ROI PREVIEW / FOREHEAD AND UPPER CHEEKS')
+        self.video = VideoLabel('ОБЛАСТИ КОЖИ / ЛОБ И ВЕРХНИЕ ЧАСТИ ЩЁК')
         self.video.setMinimumSize(480, 0)
         self.video.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video.setStyleSheet(f'background: {NAVY}; color: #94A3B8; border: 1px solid {BORDER};')
@@ -1875,11 +1902,11 @@ class RPPGPage(QWidget):
         left.addWidget(self.capture_area, 1)
         controls = QHBoxLayout()
         controls.setSpacing(6)
-        self.start = cmd_button('START MEASUREMENT')
-        self.upload_video = cmd_button('UPLOAD VIDEO FILE', primary=False)
+        self.start = cmd_button('НАЧАТЬ ИЗМЕРЕНИЕ')
+        self.upload_video = cmd_button('ЗАГРУЗИТЬ ВИДЕОФАЙЛ', primary=False)
         self.upload_video.setToolTip('Видео спокойного лица, лоб и обе щеки видны, не менее 20 секунд; предпочтительно 30 секунд.')
-        self.stop = cmd_button('STOP', primary=False)
-        self.reset = cmd_button('RESET', primary=False)
+        self.stop = cmd_button('СТОП', primary=False)
+        self.reset = cmd_button('СБРОС', primary=False)
         self.start.clicked.connect(self._start)
         self.upload_video.clicked.connect(self._upload_video)
         self.stop.clicked.connect(self._stop)
@@ -1895,17 +1922,17 @@ class RPPGPage(QWidget):
         body.addLayout(left, 3)
         right = QVBoxLayout()
         right.setSpacing(8)
-        bpm_panel, bpm_lay, self.analysis_badge = panel_with_badge("Heart Rate Estimate", "WAITING", TEXT_MUTED)
-        self.bpm = MetricDisplay('Estimated pulse rate', '---', 'BPM')
+        bpm_panel, bpm_lay, self.analysis_badge = panel_with_badge("Оценка частоты пульса", "WAITING", TEXT_MUTED)
+        self.bpm = MetricDisplay('Оценка частоты пульса', '---', 'уд/мин')
         self.bpm.val.setFont(f_mono(30, True))
         bpm_lay.addWidget(self.bpm)
         qual_row = QHBoxLayout()
-        self.concentration = MetricDisplay('Spectral concentration', '---', '%')
-        self.coverage = MetricDisplay('Valid coverage', '---', '%')
+        self.concentration = MetricDisplay('Концентрация спектра', '---', '%')
+        self.coverage = MetricDisplay('Пригодное покрытие', '---', '%')
         qual_row.addWidget(self.concentration)
         qual_row.addWidget(self.coverage)
         bpm_lay.addLayout(qual_row)
-        self.detail = QLabel('No estimate yet. Timing and skin-region agreement are checked before BPM is displayed.')
+        self.detail = QLabel('Оценка ещё не проводилась. Перед выводом частоты пульса проверяются временные интервалы и согласованность участков кожи.')
         self.detail.setFont(f_mono(8))
         self.detail.setTextFormat(Qt.TextFormat.PlainText)
         self.detail.setWordWrap(True)
@@ -1936,9 +1963,9 @@ class RPPGPage(QWidget):
         self.coverage.set_value('---')
         self.wave.clear_plot()
         self.spectrum.clear_plot()
-        self.video.setText('SKIN ROI PREVIEW / FOREHEAD AND UPPER CHEEKS')
-        self.detail.setText('Sit still under constant light. BPM appears only after a valid completed recording.')
-        self.guidance.setText('Sit still, keep the forehead uncovered, use steady diffuse light. Avoid speaking during capture.')
+        self.video.setText('ОБЛАСТИ КОЖИ / ЛОБ И ВЕРХНИЕ ЧАСТИ ЩЁК')
+        self.detail.setText('Сидите неподвижно при постоянном освещении. Частота пульса появится только после успешной полной записи.')
+        self.guidance.setText('Сидите неподвижно, не закрывайте лоб, используйте ровный рассеянный свет. Во время записи избегайте разговора.')
         set_badge(self.badge, 'IDLE', TEXT_MUTED)
         set_badge(self.analysis_badge, 'WAITING', TEXT_MUTED)
         self.start.setEnabled(self.worker is None and not self.closing)
@@ -2053,7 +2080,7 @@ class RPPGPage(QWidget):
                     self.detail.setText(f'Видео: {os.path.basename(self.source_path)}. ' + self.detail.text())
             else:
                 set_badge(self.badge, 'IDLE', TEXT_MUTED)
-                self.video.setText('MEASUREMENT CANCELLED')
+                self.video.setText('ИЗМЕРЕНИЕ ОТМЕНЕНО')
         except Exception as exc:
             self.bpm.set_value('---')
             self.protocol_panel.clear()
@@ -2061,10 +2088,10 @@ class RPPGPage(QWidget):
             self.coverage.set_value('---')
             self.detail.setText(str(exc))
             self.spectrum.clear_plot()
-            self.video.setText('MEASUREMENT ENDED / RETRY REQUIRED')
+            self.video.setText('ИЗМЕРЕНИЕ ОКОНЧЕНО / ПОВТОРИТЕ ТЕСТ')
             set_badge(self.badge, 'RETRY', AMBER)
             set_badge(self.analysis_badge, 'REJECTED', AMBER)
-            self.guidance.setText('Measurement ended. See the rejection reason in the Heart Rate Estimate panel.')
+            self.guidance.setText('Измерение завершено. Причина отклонения указана в панели оценки частоты пульса.')
             if self.status_bar:
                 self.status_bar.update_badge('DSP', 'REJECTED', AMBER)
         finally:
@@ -2080,39 +2107,40 @@ class RPPGPage(QWidget):
             self.capture_finished.emit()
 
     def _render(self, result):
-        warnings = result['warnings']
+        raw_warnings = result['warnings']
+        warnings_ru = [WARNING_TRANSLATIONS.get(w, w) for w in raw_warnings]
         self.bpm.set_value(f"{result['bpm']:.0f}")
         self.concentration.set_value(f"{result['concentration']:.1f}")
         self.coverage.set_value(f"{result['coverage'] * 100:.0f}")
         self.detail.setText(
-            f"{result['samples']} samples, {result['rate']:.1f}/s, FFT bin spacing {result['resolution_bpm']:.1f} BPM. "
-            f"ROI estimates: {', '.join(f'{value:.0f}' for value in result['roi_bpm'])} BPM. "
-            + (' '.join(warnings) + ' ' if warnings else '') +
-            'Research estimate only; shared lighting artifacts cannot always be excluded. No SpO2 measurement.'
+            f"Отсчётов: {result['samples']}, {result['rate']:.1f}/с, шаг частотной сетки FFT {result['resolution_bpm']:.1f} уд/мин. "
+            f"Оценки по участкам: {', '.join(f'{value:.0f}' for value in result['roi_bpm'])} уд/мин. "
+            + (' '.join(warnings_ru) + ' ' if warnings_ru else '') +
+            'Только исследовательская оценка; нельзя исключить артефакты общего освещения. Без измерения SpO2.'
         )
         self.wave.clear_plot()
         self.wave.ax.plot(result['time'], result['pulse'], color=NAVY, linewidth=0.7)
-        self.wave.ax.set_title('FILTERED GREEN MODULATION / 0.75-3.0 Hz', fontsize=8)
-        self.wave.ax.set_xlabel('Time (s)', fontsize=7)
-        self.wave.ax.set_ylabel('Fractional intensity (%)', fontsize=7)
+        self.wave.ax.set_title('ФИЛЬТРОВАННАЯ ЗЕЛЁНАЯ МОДУЛЯЦИЯ / 0,75–3,0 Гц', fontsize=8)
+        self.wave.ax.set_xlabel('Время (с)', fontsize=7)
+        self.wave.ax.set_ylabel('Относительная интенсивность (%)', fontsize=7)
         self.wave.draw_idle()
         self.spectrum.clear_plot()
         self.spectrum.ax.plot(result['frequencies'] * 60, result['spectrum'], color=NAVY, linewidth=0.8)
         self.spectrum.ax.axvline(result['bpm'], color=RED, linestyle='--', linewidth=1)
         self.spectrum.ax.set_xlim(45, 180)
-        self.spectrum.ax.set_title('NORMALIZED FFT POWER / PULSE CANDIDATE', fontsize=8)
-        self.spectrum.ax.set_xlabel('Pulse rate (BPM)', fontsize=7)
-        self.spectrum.ax.set_ylabel('Normalized power', fontsize=7)
+        self.spectrum.ax.set_title('НОРМИРОВАННАЯ МОЩНОСТЬ FFT / КАНДИДАТ ПУЛЬСА', fontsize=8)
+        self.spectrum.ax.set_xlabel('Частота пульса (уд/мин)', fontsize=7)
+        self.spectrum.ax.set_ylabel('Нормированная мощность', fontsize=7)
         self.spectrum.draw_idle()
         self.progress.setValue(100)
-        self.video.setText('RECORDING COMPLETE / SEE ESTIMATE')
-        set_badge(self.badge, 'CHECK QUALITY' if warnings else 'COMPLETE', AMBER if warnings else GREEN)
-        set_badge(self.analysis_badge, 'ESTIMATE / CAUTION' if warnings else 'ACCEPTED', AMBER if warnings else GREEN)
-        self.guidance.setText('Measurement complete. A camera-derived pulse estimate needs validation against a reference sensor.')
+        self.video.setText('ЗАПИСЬ ЗАВЕРШЕНА / СМОТРИТЕ ОЦЕНКУ')
+        set_badge(self.badge, 'CHECK QUALITY' if warnings_ru else 'COMPLETE', AMBER if warnings_ru else GREEN)
+        set_badge(self.analysis_badge, 'ESTIMATE / CAUTION' if warnings_ru else 'ACCEPTED', AMBER if warnings_ru else GREEN)
+        self.guidance.setText('Измерение завершено. Камерную оценку частоты пульса необходимо подтверждать эталонным датчиком.')
         if self.source_kind == 'video':
             self.guidance.setText(f'Источник: видеофайл {os.path.basename(self.source_path)}. ' + self.guidance.text())
         if self.status_bar:
-            self.status_bar.update_badge('DSP', 'CAUTION' if warnings else 'COMPLETE', AMBER if warnings else GREEN)
+            self.status_bar.update_badge('DSP', 'CAUTION' if warnings_ru else 'COMPLETE', AMBER if warnings_ru else GREEN)
         self.protocol_panel.set_results(result)
         self.protocol_panel.reveal()
 
@@ -2193,7 +2221,7 @@ AAC_CATEGORIES = [
 ]
 
 
-class AACContextLabel(PlainLabel):
+class AACContextLabel(QLabel):
     """Russian context text must not change the calibrated navigation geometry."""
 
     def freeze_size_hint(self):
@@ -2285,16 +2313,16 @@ class AACPage(QWidget):
         self.tracking_video.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tracking_layout.addWidget(self.tracking_video, 1)
         metrics = QHBoxLayout()
-        self.gaze_x = MetricDisplay('Gaze X', '---')
-        self.gaze_y = MetricDisplay('Gaze Y', '---')
-        self.dwell_display = MetricDisplay('DWELL', '0', 'мс')
+        self.gaze_x = MetricDisplay('Взгляд по горизонтали', '---')
+        self.gaze_y = MetricDisplay('Взгляд по вертикали', '---')
+        self.dwell_display = MetricDisplay('Удержание', '0', 'мс')
         for metric in (self.gaze_x, self.gaze_y, self.dwell_display):
             metrics.addWidget(metric)
         tracking_layout.addLayout(metrics)
         track_buttons = QHBoxLayout()
-        self.btn_tracking = cmd_button('START GAZE TRACKING')
-        self.btn_calibrate = cmd_button('CALIBRATE GAZE', primary=False)
-        self.btn_stop_tracking = cmd_button('STOP TRACKING', primary=False)
+        self.btn_tracking = cmd_button('НАЧАТЬ ОТСЛЕЖИВАНИЕ ВЗГЛЯДА')
+        self.btn_calibrate = cmd_button('КАЛИБРОВАТЬ ВЗГЛЯД', primary=False)
+        self.btn_stop_tracking = cmd_button('ОСТАНОВИТЬ ОТСЛЕЖИВАНИЕ', primary=False)
         self.btn_calibrate.setEnabled(False)
         self.btn_stop_tracking.setEnabled(False)
         self.btn_tracking.clicked.connect(self._start_tracking)
@@ -2316,8 +2344,8 @@ class AACPage(QWidget):
         self.output.setStyleSheet(f'background: {BG_ALT}; color: {NAVY}; border: 1px solid {BORDER};')
         output_layout.addWidget(self.output, 1)
         output_buttons = QHBoxLayout()
-        self.btn_speak = cmd_button('SPEAK')
-        self.btn_clear = cmd_button('CLEAR', primary=False)
+        self.btn_speak = cmd_button('ПРОИЗНЕСТИ')
+        self.btn_clear = cmd_button('ОЧИСТИТЬ', primary=False)
         self.btn_speak.clicked.connect(self._speak_output)
         self.btn_clear.clicked.connect(self._on_clear_clicked)
         output_buttons.addWidget(self.btn_speak)
@@ -2940,7 +2968,7 @@ class VoicePage(QWidget):
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(8)
         header = QHBoxLayout()
-        title = QLabel("VOICE BIOMARKERS / ACOUSTIC ANALYSIS")
+        title = QLabel("ГОЛОСОВЫЕ БИОМАРКЕРЫ / АКУСТИЧЕСКИЙ АНАЛИЗ")
         title.setFont(f_sans(13, True))
         title.setStyleSheet(f"color: {TEXT};")
         header.addWidget(title)
@@ -2948,37 +2976,37 @@ class VoicePage(QWidget):
         self.badge = make_status_badge('IDLE', TEXT_MUTED)
         header.addWidget(self.badge)
         layout.addLayout(header)
-        sub = QLabel("Sustained vowel /a/ | 5 seconds | Praat perturbation metrics + librosa | Research use only")
+        sub = QLabel("Длительный гласный звук «А» | 5 секунд | Показатели вариации Praat + librosa | Только для исследовательских целей")
         sub.setFont(f_mono(8))
         sub.setStyleSheet(f"color: {TEXT_MUTED};")
         layout.addWidget(sub)
         top = QHBoxLayout()
         top.setSpacing(8)
-        rec_panel, rec_lay, _ = panel_with_badge("Recording", "МИКРОФОН", TEXT_MUTED)
+        rec_panel, rec_lay, _ = panel_with_badge("Запись", "МИКРОФОН", TEXT_MUTED)
         self.time_label = QLabel("0.0 / 5.0")
         self.time_label.setFont(f_mono(28, True))
         self.time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.time_label.setStyleSheet(f"color: {TEXT}; border: none;")
         rec_lay.addWidget(self.time_label)
-        timer_unit = QLabel("seconds")
+        timer_unit = QLabel("секунд")
         timer_unit.setFont(f_mono(9))
         timer_unit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         timer_unit.setStyleSheet(f"color: {TEXT_MUTED}; border: none;")
         rec_lay.addWidget(timer_unit)
         self.progress = thin_progress()
         rec_lay.addWidget(self.progress)
-        self.level = MetricDisplay('Peak input level', '---', 'dBFS')
+        self.level = MetricDisplay('Пиковый уровень входа', '---', 'dBFS')
         rec_lay.addWidget(self.level)
-        self.guidance = QLabel('Use a quiet room. Sustain Ah at a comfortable, steady volume and pitch for five seconds. Keep microphone distance fixed.')
+        self.guidance = QLabel('Записывайте в тихой комнате. Тяните звук «А» на комфортной постоянной громкости и высоте пять секунд. Держите расстояние до микрофона постоянным.')
         self.guidance.setWordWrap(True)
         self.guidance.setStyleSheet(f'color: {TEXT_DIM}; border: none;')
         rec_lay.addWidget(self.guidance)
         controls = QHBoxLayout()
-        self.start = cmd_button('START RECORDING')
+        self.start = cmd_button('ЗАПИСЬ ГОЛОСА')
         self.start.setToolTip('Новая запись с микрофона. Скажите протяжный звук «А» после начала отсчёта.')
-        self.upload = cmd_button('UPLOAD AUDIO FILE', primary=False)
-        self.stop = cmd_button('STOP', primary=False)
-        self.reset = cmd_button('RESET', primary=False)
+        self.upload = cmd_button('ЗАГРУЗИТЬ АУДИОФАЙЛ', primary=False)
+        self.stop = cmd_button('СТОП', primary=False)
+        self.reset = cmd_button('СБРОС', primary=False)
         self.start.clicked.connect(self._start)
         self.upload.clicked.connect(self._upload)
         self.stop.clicked.connect(self._stop)
@@ -2988,19 +3016,19 @@ class VoicePage(QWidget):
             controls.addWidget(button)
         rec_lay.addLayout(controls)
         top.addWidget(rec_panel, 1)
-        met_panel, met_lay = panel("Acoustic Metrics")
+        met_panel, met_lay = panel("Акустические показатели")
         met_grid = QGridLayout()
         met_grid.setSpacing(2)
-        self.f0 = MetricDisplay('Median F0', '---', 'Hz')
-        self.jitter = MetricDisplay('Jitter (local)', '---', '%')
-        self.shimmer = MetricDisplay('Shimmer (local)', '---', '%')
-        self.hnr = MetricDisplay('HNR (autocorrelation)', '---', 'dB')
+        self.f0 = MetricDisplay('Медианная F0', '---', 'Гц')
+        self.jitter = MetricDisplay('Локальный джиттер', '---', '%')
+        self.shimmer = MetricDisplay('Локальный шиммер', '---', '%')
+        self.hnr = MetricDisplay('HNR (автокорреляция)', '---', 'дБ')
         met_grid.addWidget(self.f0, 0, 0)
         met_grid.addWidget(self.jitter, 0, 1)
         met_grid.addWidget(self.shimmer, 1, 0)
         met_grid.addWidget(self.hnr, 1, 1)
         met_lay.addLayout(met_grid)
-        self.detail = QLabel('No result yet. A sustained vowel does not assess speech articulation or diagnose dysarthria.')
+        self.detail = QLabel('Результатов пока нет. Длительный гласный звук не оценивает артикуляцию речи и не диагностирует дизартрию.')
         self.detail.setWordWrap(True)
         self.detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.detail.setStyleSheet(f'color: {TEXT_DIM}; border: none;')
@@ -3122,7 +3150,12 @@ class VoicePage(QWidget):
             return
         self.time_label.setText(f"{latest['elapsed']:.1f} / 5.0")
         self.progress.setValue(int(latest['elapsed'] * 20))
-        self.guidance.setText(latest['message'])
+        msg = latest.get('message', '')
+        if 'Loading audio' in msg:
+            msg = 'Загрузка аудиофайла…'
+        elif 'Acoustic analysis complete' in msg:
+            msg = 'Акустический анализ завершён.'
+        self.guidance.setText(msg)
         set_badge(self.badge, latest['state'], GREEN if latest['state'] == 'RECORDING' else AMBER)
         if latest['level'] > 0:
             self.level.set_value(f"{20 * np.log10(latest['level']):.1f}")
@@ -3172,10 +3205,11 @@ class VoicePage(QWidget):
         for metric, key, digits in ((self.f0, 'f0', 1), (self.jitter, 'jitter_local', 3),
                                     (self.shimmer, 'shimmer_local', 3), (self.hnr, 'hnr', 1)):
             metric.set_value(f"{result[key]:.{digits}f}")
+        warnings_translated = [WARNING_TRANSLATIONS.get(w, w) for w in result.get('warnings', [])]
         self.detail.setText(
-            f"Voiced frames: {result['voiced_fraction']*100:.1f}%; level: {result['level_dbfs']:.1f} dBFS. "
+            f"Озвученные кадры: {result['voiced_fraction']*100:.1f}%; уровень: {result['level_dbfs']:.1f} dBFS. "
             f"Jitter RAP: {result['jitter_rap']:.3f}%; shimmer APQ5: {result['shimmer_apq5']:.3f}%. "
-            + ' '.join(result['warnings'])
+            + ' '.join(warnings_translated)
         )
         if result.get('source') in ('file', 'video'):
             source_label = 'Видео' if result.get('source') == 'video' else 'Файл'
@@ -3186,21 +3220,21 @@ class VoicePage(QWidget):
         for plot in (self.wave, self.pitch_plot, self.spectrogram):
             plot.clear_plot()
         self.wave.ax.plot(result['wave_time'], result['wave'], color=NAVY, linewidth=0.4)
-        self.wave.ax.set_title('VOICE WAVEFORM', fontsize=8)
-        self.wave.ax.set_xlabel('Time (s)', fontsize=7)
+        self.wave.ax.set_title('ОСЦИЛЛОГРАММА ГОЛОСА', fontsize=8)
+        self.wave.ax.set_xlabel('Время (с)', fontsize=7)
         self.pitch_plot.ax.plot(result['pitch_time'], result['pitch'], color=NAVY, linewidth=0.8)
-        self.pitch_plot.ax.set_title('F0 / PERIODIC VOICING', fontsize=8)
-        self.pitch_plot.ax.set_ylabel('Frequency (Hz)', fontsize=7)
+        self.pitch_plot.ax.set_title('F0 / ПЕРИОДИЧЕСКАЯ ФОНАЦИЯ', fontsize=8)
+        self.pitch_plot.ax.set_ylabel('Частота (Гц)', fontsize=7)
         self.spectrogram.ax.pcolormesh(result['spectrogram_time'], result['spectrogram_freq'], result['spectrogram'],
                                       shading='auto', cmap='magma', vmin=-80, vmax=0)
         self.spectrogram.ax.set_ylim(0, 5000)
-        self.spectrogram.ax.set_title('STFT / RELATIVE dB', fontsize=8)
-        self.spectrogram.ax.set_xlabel('Time (s)', fontsize=7)
+        self.spectrogram.ax.set_title('БПФ / ОТНОСИТЕЛЬНЫЕ дБ', fontsize=8)
+        self.spectrogram.ax.set_xlabel('Время (с)', fontsize=7)
         for plot in (self.wave, self.pitch_plot, self.spectrogram):
             plot.draw_idle()
         self.protocol_panel.set_results(result)
         self.protocol_panel.reveal()
-        self.guidance.setText('Recording and acoustic analysis complete. See the reference guidance below.')
+        self.guidance.setText('Запись и акустический анализ завершены. Ознакомьтесь с пояснениями ниже.')
         set_badge(self.badge, 'COMPLETE', GREEN)
 
     def cleanup(self):

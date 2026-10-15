@@ -31,17 +31,17 @@ def extract_regions(frame, landmarks, pose):
         polygon = points[list(indices), :2]
         polygon = (polygon.mean(axis=0) + 0.75 * (polygon - polygon.mean(axis=0))).astype(np.int32)
         if np.any(polygon < 4) or np.any(polygon[:, 0] >= w - 4) or np.any(polygon[:, 1] >= h - 4):
-            raise ValueError('Keep the forehead and both cheeks fully inside the frame.')
+            raise ValueError('Держите лоб и обе щеки полностью в кадре.')
         mask = np.zeros((h, w), dtype=np.uint8)
         cv2.fillConvexPoly(mask, cv2.convexHull(polygon), 255)
         pixels = frame[mask > 0]
         if len(pixels) < 80:
-            raise ValueError('Skin regions are too small for reliable averaging.')
+            raise ValueError('Участки кожи слишком малы для надёжного усреднения.')
         if np.mean((pixels <= 5) | (pixels >= 250)) > 0.05:
-            raise ValueError('A skin region is underexposed or clipped. Use diffuse frontal light.')
+            raise ValueError('Участок кожи недоэкспонирован или пересвечен. Используйте рассеянный фронтальный свет.')
         color = pixels[:, ::-1].mean(axis=0)
         if min(color) < 30 or max(color) > 240:
-            raise ValueError('Improve lighting on forehead and cheeks.')
+            raise ValueError('Улучшите освещение лба и щёк.')
         colors.append(color)
         polygons.append(polygon)
     face_min = points[:468, :2].min(axis=0)
@@ -50,7 +50,7 @@ def extract_regions(frame, landmarks, pose):
     corners = ((0, 0), (w - size, 0), (0, h - size), (w - size, h - size))
     available = [(x, y) for x, y in corners if x + size < face_min[0] or x > face_max[0] or y + size < face_min[1] or y > face_max[1]]
     if not available:
-        raise ValueError('Move slightly farther from the camera to leave a background reference.')
+        raise ValueError('Немного отдалитесь от камеры, чтобы в кадре остался участок фона.')
     x, y = available[0]
     reference = float(frame[y:y + size, x:x + size, 1].mean())
     center = points[[33, 263], :2].mean(axis=0)
@@ -139,7 +139,7 @@ class RPPGSession(QThread):
                                 self.record_start = now
                         geometry = np.array([*(center / anchor_span), span / anchor_span, *pose])
                         sample = {'timestamp': now, 'rgb': colors, 'background': background, 'geometry': geometry}
-                        message = 'RECORDING: remain still under constant light.' if self.record_start is not None else 'PREPARING: remain still for 3 seconds.'
+                        message = 'ЗАПИСЬ: оставайтесь неподвижны при постоянном освещении.' if self.record_start is not None else 'ПОДГОТОВКА: оставайтесь неподвижны три секунды.'
                     except ValueError as exc:
                         message = str(exc)
                         if self.record_start is None:

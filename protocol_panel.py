@@ -6,7 +6,6 @@ from PyQt6.QtCore import Qt, QObject, QEvent, QVariantAnimation, QEasingCurve, p
 from PyQt6.QtGui import QFont, QTextDocument
 from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtWidgets import QFileDialog, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget
-from i18n_ru import RussianLabel as QLabel, ru
 
 
 JITTER_REFERENCE = 1.04
@@ -219,14 +218,14 @@ class ProtocolPanel(QFrame):
         layout.setSpacing(6)
         header = QHBoxLayout()
         self.header_layout = header
-        title = QLabel('CLINICAL PROTOCOL & SCREENING ASSESSMENT')
+        title = QLabel('ПРОТОКОЛ / ПОЯСНЕНИЯ К ИЗМЕРЕНИЮ')
         self.title_label = title
         title.setFont(QFont('Consolas', 8, QFont.Weight.Bold))
         title.setWordWrap(True)
         title.setStyleSheet('color: #60A5FA;')
         header.addWidget(title, 1)
-        self.export_button = QPushButton(ru('[EXPORT PDF]'))
-        self.save_button = QPushButton(ru('[SAVE REPORT]'))
+        self.export_button = QPushButton('[ЭКСПОРТ PDF]')
+        self.save_button = QPushButton('[СОХРАНИТЬ ОТЧЁТ]')
         for button in (self.export_button, self.save_button):
             button.setFont(QFont('Consolas', 8))
             header.addWidget(button)
@@ -305,7 +304,7 @@ class ProtocolPanel(QFrame):
             metrics.append(f"Отсчётов: {results['samples']}")
         source = f"Источник: видеофайл {results['source_file']}" if results.get('source') == 'video' else ''
         self.report = self._compose_report(
-            'TECNOMEDNEURO / HAND MOTION RESEARCH REPORT', '\n'.join(metrics),
+            'TecnoMedNeuro / ОТЧЁТ ОБ ИССЛЕДОВАНИИ ДВИЖЕНИЙ КИСТИ', '\n'.join(metrics),
             status, detail, limitation, action, source,
         )
         self.assessment_completed.emit(results)
@@ -333,14 +332,14 @@ class ProtocolPanel(QFrame):
                 printer.setOutputFileName(str(output))
                 document = QTextDocument()
                 document.setDefaultFont(QFont('Consolas', 9))
-                document.setPlainText(ru(self.report))
+                document.setPlainText(self.report)
                 document.print(printer)
                 if not output.is_file() or output.stat().st_size == 0:
                     raise OSError('PDF output was not created')
             else:
-                output.write_text(ru(self.report), encoding='utf-8')
+                output.write_text(self.report, encoding='utf-8')
         except (OSError, RuntimeError) as exc:
-            QMessageBox.warning(self, ru('Не удалось сохранить отчёт'), ru(str(exc)))
+            QMessageBox.warning(self, 'Не удалось сохранить отчёт', str(exc))
 
 
 def _dominant_region_sentence(results):
@@ -415,7 +414,7 @@ class FacialProtocolPanel(ProtocolPanel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.report_name = 'facial_symmetry_report'
-        self.title_label.setText('CLINICAL PROTOCOL & FAST SCREENING')
+        self.title_label.setText('ПРОТОКОЛ / ЛИЦЕВОЙ КОМПОНЕНТ FAST')
         self.header_layout.removeWidget(self.save_button)
         self.header_layout.insertWidget(1, self.save_button)
         self.close_button.show()
@@ -436,10 +435,24 @@ class FacialProtocolPanel(ProtocolPanel):
             )
         source = f"Источник: видеофайл {results['source_file']}" if results.get('source') == 'video' else ''
         self.report = self._compose_report(
-            'TECNOMEDNEURO / FACIAL SYMMETRY RESEARCH REPORT', '\n'.join(metrics),
+            'TecnoMedNeuro / ОТЧЁТ ОБ ИССЛЕДОВАНИИ СИММЕТРИИ ЛИЦА', '\n'.join(metrics),
             status, detail, limitation, action, source,
         )
         self.assessment_completed.emit(results)
+
+
+WARNING_TRANSLATIONS = {
+    'Slow head-position drift was observed. Estimate accepted only after pulse consistency and motion-artifact checks; confirm with a reference sensor.':
+        'Наблюдалось медленное смещение головы. Оценка принята после проверки согласованности сигнала и артефактов движения; подтвердите её эталонным датчиком.',
+    'Brief pose or tracking outliers were observed; treat the estimate cautiously.':
+        'Наблюдались краткие выбросы положения головы или отслеживания. Относитесь к оценке с осторожностью.',
+    'High recording level; keep microphone distance and gain consistent.':
+        'Высокий уровень записи. Сохраняйте расстояние до микрофона и его усиление.',
+    'Some analyzed frames are unvoiced; perturbation metrics describe accepted cycles only.':
+        'Часть кадров не содержит устойчивой фонации; показатели вариации относятся только к принятым периодам.',
+    'Pitch is near the 75-500 Hz analysis limits; interpretation is limited.':
+        'Высота голоса близка к границам анализа 75–500 Гц; интерпретация ограничена.',
+}
 
 
 def rppg_protocol_text(results):
@@ -492,12 +505,14 @@ def rppg_protocol_text(results):
         )
         action = 'Отдохните 5–10 минут и повторите измерение при ровном свете; сравните с прямым измерением пульса и укажите недавнюю нагрузку.'
     action += RPPG_URGENT
+    raw_warnings = results.get('warnings', [])
+    warnings_ru = [WARNING_TRANSLATIONS.get(w, w) for w in raw_warnings]
     limitation = _join(
         f'Покрытие {_pct(coverage, 0)}; концентрация спектра {_pct(concentration)}. '
         f'Разброс всех ROI: {_num(spread, 1)} уд/мин (учитываются все три участка, включая исключённые движком).',
         'Пороги панели (покрытие 70%, концентрация 60%, разброс 5 уд/мин) — исследовательские правила отображения, а не клинические границы.',
         f"Разрешение спектра: {_num(results['resolution_bpm'], 1)} уд/мин." if results.get('resolution_bpm') is not None else '',
-        ('Предупреждения при записи: ' + ' '.join(results['warnings'])) if results.get('warnings') else '',
+        ('Предупреждения при записи: ' + ' '.join(warnings_ru)) if warnings_ru else '',
     )
     return status, detail, action, limitation
 
@@ -506,7 +521,7 @@ class RPPGProtocolPanel(ProtocolPanel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.report_name = 'rppg_pulse_report'
-        self.title_label.setText('CLINICAL PROTOCOL & VITALS SCREENING')
+        self.title_label.setText('ПРОТОКОЛ / ОЦЕНКА ПУЛЬСА')
         self.header_layout.removeWidget(self.save_button)
         self.header_layout.insertWidget(1, self.save_button)
         self.close_button.show()
@@ -526,7 +541,7 @@ class RPPGProtocolPanel(ProtocolPanel):
             f"Наибольший пропуск: {_num(results['max_gap'], 3)} с; разрешение спектра: {_num(results['resolution_bpm'], 1)} уд/мин",
         ]
         self.report = self._compose_report(
-            'TECNOMEDNEURO / rPPG PULSE RESEARCH REPORT', '\n'.join(line for line in metrics if line),
+            'TecnoMedNeuro / ОТЧЁТ ОБ ИССЛЕДОВАНИИ ПУЛЬСА rPPG', '\n'.join(line for line in metrics if line),
             status, detail, limitation, action,
         )
         self.assessment_completed.emit(results)
@@ -582,7 +597,7 @@ def voice_protocol_text(results):
         f"{results['sample_rate']} Гц; уровень записи {_num(results['level_dbfs'], 1)} дБFS; "
         f"пересвеченных отсчётов {_pct(results['clipping'] * 100, 3)}.",
         'Для HNR здесь нет универсального клинического порога.',
-        ' '.join(results.get('warnings', [])),
+        ' '.join(WARNING_TRANSLATIONS.get(w, w) for w in results.get('warnings', [])),
     )
     return status, detail, action, limitation
 
@@ -591,7 +606,7 @@ class VoiceProtocolPanel(ProtocolPanel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.report_name = 'voice_acoustic_report'
-        self.title_label.setText('VOICE STABILITY / RESEARCH REFERENCES')
+        self.title_label.setText('СТАБИЛЬНОСТЬ ГОЛОСА / ИССЛЕДОВАТЕЛЬСКИЕ ОРИЕНТИРЫ')
         self.close_button.show()
 
     def set_results(self, results):
@@ -623,7 +638,7 @@ class VoiceProtocolPanel(ProtocolPanel):
         else:
             metrics += '\nИсточник: запись с микрофона'
         self.report = '\n\n'.join([
-            'TECNOMEDNEURO / VOICE ACOUSTIC RESEARCH REPORT',
+            'TecnoMedNeuro / ОТЧЁТ ОБ АКУСТИЧЕСКОМ ИССЛЕДОВАНИИ ГОЛОСА',
             f'Дата и время записи: {_timestamp()}',
             metrics,
             'Алгоритмы: Praat через Parselmouth (высота тона, периоды, вариации, гармоничность); librosa YIN, STFT, MFCC.',

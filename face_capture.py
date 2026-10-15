@@ -112,7 +112,7 @@ class FaceSession(QThread):
             timestamp_ms = 0
             previous_center = None
             previous_width = None
-            instructions = {'rest': 'Relax the face', 'smile': 'Smile clearly and hold', 'brows': 'Raise both eyebrows and hold'}
+            instructions = {'rest': 'Расслабьте лицо', 'smile': 'Улыбнитесь и удерживайте улыбку', 'brows': 'Поднимите обе брови и удерживайте положение'}
             while not self.isInterruptionRequested():
                 self.phase_change('camera read')
                 ret, frame = camera.read()
@@ -154,9 +154,9 @@ class FaceSession(QThread):
                     x1, y1 = np.minimum(points[:468, :2].max(axis=0).astype(int), [w - 1, h - 1])
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y0:y1, x0:x1]
                     if x0 < 5 or y0 < 5 or x1 > w - 6 or y1 > h - 6:
-                        quality = 'Keep the whole face inside the camera view.'
+                        quality = 'Держите лицо полностью внутри кадра.'
                     elif gray.size == 0 or gray.mean() < 35 or gray.mean() > 235 or cv2.Laplacian(gray, cv2.CV_64F).var() < 12:
-                        quality = 'Face image is dark, overexposed, or blurred; improve lighting and focus.'
+                        quality = 'Изображение лица тёмное, пересвеченное или размытое. Улучшите освещение и фокусировку.'
                     valid = not quality
                 if sequence_start is None:
                     if valid:
@@ -183,12 +183,12 @@ class FaceSession(QThread):
                     break
                 stage = 'preparing'
                 capturing = False
-                message = quality or 'Preparing: keep a relaxed face and look directly at the camera'
+                message = quality or 'Подготовка: расслабьте лицо и смотрите прямо в камеру'
                 if sequence_start is not None:
                     stage_index = int(elapsed // 5)
                     stage = ('rest', 'smile', 'brows')[stage_index]
                     capturing = elapsed % 5 >= 2
-                    message = (quality + ' | ' if quality else '') + instructions[stage] + (' / CAPTURING' if capturing else ' / PREPARE')
+                    message = (quality + ' | ' if quality else '') + instructions[stage] + (' / ИДЁТ ЗАПИСЬ' if capturing else ' / ПОДГОТОВКА')
                     start = sequence_start + stage_index * 5 + 2
                     self.bounds[stage] = (start, start + 3)
                     if capturing:

@@ -109,16 +109,16 @@ def analyze_stage(samples, start, end):
 def compare_stages(rest, smile, brows):
     for expression in (smile, brows):
         if np.max(np.abs(expression['pose'] - rest['pose'])) > 5 or abs(expression['width_px'] / rest['width_px'] - 1) > 0.08:
-            raise ValueError('Head position or camera distance changed between stages; repeat the complete test.')
+            raise ValueError('Между этапами изменилось положение головы или расстояние до камеры. Повторите весь тест.')
     smile_motion = np.linalg.norm(smile['mouth_position'] - rest['mouth_position'], axis=1)
     brow_motion = np.abs(np.asarray(brows['brow']) - rest['brow'])
     if sum(smile_motion) < 0.02 or sum(brow_motion) < 0.025:
         missing = []
         if sum(smile_motion) < 0.02:
-            missing.append(f'smile excursion {sum(smile_motion) * 100:.2f}% (minimum 2.00%)')
+            missing.append(f'движение уголков рта {sum(smile_motion) * 100:.2f}% (минимум 2,00%)')
         if sum(brow_motion) < 0.025:
-            missing.append(f'brow excursion {sum(brow_motion) * 100:.2f}% (minimum 2.50%)')
-        raise ValueError('Expression was too small: ' + '; '.join(missing) + '. Follow the on-screen smile and brow-raise prompts. These are measurement limits, not clinical thresholds.')
+            missing.append(f'движение бровей {sum(brow_motion) * 100:.2f}% (минимум 2,50%)')
+        raise ValueError('Мимическое движение слишком мало: ' + '; '.join(missing) + '. Следуйте подсказкам для улыбки и поднятия бровей. Это технические пределы измерения, а не клинические пороги.')
     imbalance_smile = 100 * abs(smile_motion[0] - smile_motion[1]) / sum(smile_motion)
     imbalance_brows = 100 * abs(brow_motion[0] - brow_motion[1]) / sum(brow_motion)
     return {

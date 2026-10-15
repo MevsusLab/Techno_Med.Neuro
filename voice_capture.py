@@ -48,7 +48,7 @@ class VoiceSession(QThread):
             if not 16000 <= sample_rate <= 96000:
                 raise ValueError('Microphone default sample rate must be between 16 and 96 kHz.')
             sd.check_input_settings(channels=1, dtype='float32', samplerate=sample_rate)
-            self.publish(state='PREPARING', elapsed=0, level=0, message='Get ready. Sustain a comfortable Ah for five seconds when RECORDING appears.')
+            self.publish(state='PREPARING', elapsed=0, level=0, message='Подготовьтесь. Когда начнётся ЗАПИСЬ, протяните звук «А» пять секунд.')
             for _ in range(20):
                 if self.isInterruptionRequested():
                     return
@@ -63,7 +63,7 @@ class VoiceSession(QThread):
             onset_samples = 0
             wait_started = time.perf_counter()
             self.publish(state='WAITING_VOICE', elapsed=0, level=0,
-                         message='Begin a steady Ah now. The five-second timer starts when sound is detected.')
+                         message='Начните тянуть звук «А». Таймер пяти секунд запустится после обнаружения звука. Держите громкость и расстояние до микрофона постоянными.')
             while not self.isInterruptionRequested():
                 self.phase_change('microphone read')
                 block, overflow = stream.read(1024)
@@ -81,7 +81,7 @@ class VoiceSession(QThread):
                     onset_blocks = []
                     onset_samples = 0
                 self.publish(state='WAITING_VOICE', elapsed=0, level=float(np.max(np.abs(values))),
-                             message='Begin a steady Ah now. The five-second timer starts when sound is detected.')
+                             message='Начните тянуть звук «А». Таймер пяти секунд запустится после обнаружения звука. Держите громкость и расстояние до микрофона постоянными.')
                 if onset_samples >= int(sample_rate * 0.08):
                     blocks = onset_blocks
                     count = onset_samples
@@ -99,7 +99,7 @@ class VoiceSession(QThread):
                 blocks.append(values)
                 count += len(values)
                 self.publish(state='RECORDING', elapsed=count / sample_rate,
-                             level=float(np.max(np.abs(values))), message='Sustain Ah continuously. Keep volume and microphone distance steady.')
+                             level=float(np.max(np.abs(values))), message='Непрерывно тяните звук «А». Сохраняйте громкость и расстояние до микрофона.')
             self.phase_change('resource close')
             stream.stop()
             stream.close()
@@ -107,11 +107,11 @@ class VoiceSession(QThread):
             if self.isInterruptionRequested():
                 return
             self.phase_change('voice analysis')
-            self.publish(state='PROCESSING', elapsed=5, level=0, message='Analyzing pitch, vocal periods, amplitudes and harmonicity. First use may take longer.')
+            self.publish(state='PROCESSING', elapsed=5, level=0, message='Анализ высоты голоса, периодов, амплитуды и гармоничности. Первый запуск может занять больше времени.')
             result = analyze_voice(np.concatenate(blocks), sample_rate)
             if self.isInterruptionRequested():
                 return
-            self.publish(state='COMPLETE', elapsed=5, level=0, message='Acoustic analysis complete.', result=result)
+            self.publish(state='COMPLETE', elapsed=5, level=0, message='Акустический анализ завершён.', result=result)
             self.reason = 'deadline'
         except Exception as exc:
             self.error, self.reason = f'{type(exc).__name__}: {exc}', 'error'
