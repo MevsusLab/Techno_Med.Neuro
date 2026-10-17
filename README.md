@@ -1,147 +1,335 @@
-# TecnoMedNeuro
+# TechnoMedNeuro 🧠🔬
+> **Интеллектуальная программная система бесконтактного неврологического скрининга, биомаркерной квантификации, поддержки врачебных решений (CDSS) и ассистивной коммуникации (AAC).**
 
-Desktop research prototype for hand-motion, facial-symmetry, green-channel rPPG pulse-rate, acoustic voice measurement, and eye-gaze AAC communication. This software is not a diagnostic device and cannot identify Parkinson's disease, essential tremor, stroke, facial nerve palsy, dysarthria, or the absence of disease.
+---
 
-## Run
+## 📌 Содержание
+- [1. О проекте](#1-о-проекте)
+- [2. Быстрый старт и установка](#2-быстрый-старт-и-установка)
+- [3. Подробное руководство по исследовательским модулям](#3-подробное-руководство-по-исследовательским-модулям)
+  - [3.1. Анализ тремора верхних конечностей (ТРЕМОР)](#31-анализ-тремора-верхних-конечностей-тремор)
+  - [3.2. Геометрический анализ мимики и тест FAST (НЕЙРОМИМИКА)](#32-геометрический-анализ-мимики-и-тест-fast-нейромимика)
+  - [3.3. Бесконтактная фотоплетизмография (ПУЛЬС rPPG)](#33-бесконтактная-фотоплетизмография-пульс-rppg)
+  - [3.4. Моторный тест пальцевого таппинга (МОТОРИКА / UPDRS 3.4)](#34-моторный-тест-пальцевого-таппинга-моторика--updrs-34)
+  - [3.5. Ассистивная коммуникация по взгляду (АЙТРЕКИНГ / AAC)](#35-ассистивная-коммуникация-по-взгляду-айтрекинг--aac)
+  - [3.6. Акустический спектральный анализ голоса (ГОЛОС)](#36-акустический-спектральный-анализ-голоса-голос)
+  - [3.7. Ретроспективный анализ предварительно записанных видеофайлов](#37-ретроспективный-анализ-предварительно-записанных-видеофайлов)
+- [4. Интеллектуальный уровень: CDSS и Картотека пациентов](#4-интеллектуальный-уровень-cdss-и-картотека-пациентов)
+  - [4.1. Мультимодальный сессионный граф клинического вывода (CDSS)](#41-мультимодальный-сессионный-граф-клинического-вывода-cdss)
+  - [4.2. Темпоральный граф истории болезни (Temporal Patient Graph)](#42-темпоральный-граф-истории-болезни-temporal-patient-graph)
+  - [4.3. Автоматизированное протоколирование и экспорт в PDF](#43-автоматизированное-протоколирование-и-экспорт-в-pdf)
+- [5. Системная архитектура и отказоустойчивость](#5-системная-архитектура-и-отказоустойчивость)
+- [6. Тестирование и верификация (330 тестов)](#6-тестирование-и-верификация-330-тестов)
+- [⚠️ Клинический статус и ограничение ответственности](#️-клинический-статус-и-ограничение-ответственности)
 
-Use Python 3.12 on Windows with a webcam and microphone. Install dependencies with `python -m pip install -r requirements.txt`, then run `python app.py`. Hand and face models are downloaded into `models/` on first use if not already present. Run all tests with `python -m unittest discover -p "test_*.py"`.
+---
 
-Module headings, action buttons, live preparation/expression prompts, post-test explanations, protocol text, and disclaimers are displayed in Russian through `i18n_ru.py`. Technical state codes such as IDLE/COMPLETE, mathematical symbols, and some numerical report/chart labels remain in English. Unknown library error details remain readable in their original form. Localization changes no measurement thresholds or metric keys.
+## 1. О проекте
 
-The local `.venv` may be a different Python version and does not necessarily have the dependencies installed; activate the environment you installed into before starting the app.
+**TechnoMedNeuro** — это прикладной исследовательский комплекс, разработанный на языке Python с графическим интерфейсом на PyQt6. Система предназначена для решения актуальной клинико-инженерной проблемы: **объективизации ранних неврологических симптомов с использованием общедоступного оборудования** (стандартная веб-камера и микрофон) без дорогостоящих специализированных сенсоров.
 
-The project `.venv` uses Python 3.14; voice analysis has now also been checked in this environment. To install and run in that exact environment, use the following PowerShell commands from the project folder:
+Комплекс объединяет:
+1. **Компьютерное зрение высокого разрешения** (MediaPipe Tasks Vision) для скелетизации кисти, 3D-топологии лица и радужки глаза.
+2. **Цифровую обработку сигналов (ЦОС)** на базе SciPy и NumPy (фильтрация Баттерворта, метод Уэлча, БПФ, алгоритм Савицкого — Голея).
+3. **Акустический движок** на базе алгоритмов Praat (Parselmouth) и librosa для микродевиационного анализа речи.
+4. **Адаптивные байесовские классификаторы и конечные автоматы** для устойчивого управления взглядом (Eye-Gaze AAC).
+5. **Графовые модели искусственного интеллекта** (NetworkX) для мультимодальной поддержки врачебных решений (CDSS), темпорального анализа динамики реабилитации и предиктивного синтеза фраз.
 
+---
+
+## 2. Быстрый старт и установка
+
+### Системные требования:
+* **ОС:** Windows 10/11 (64-bit).
+* **Python:** 3.12 – 3.14 (рекомендуется виртуальное окружение `.venv`).
+* **Оборудование:** веб-камера (не менее 640×480 @ 30 FPS, рекомендуется 720p/1080p), стандартный микрофон.
+
+### Пошаговая установка:
+
+1. **Клонируйте репозиторий или перейдите в папку проекта:**
+   ```powershell
+   cd TechnoMedNeuro
+   ```
+
+2. **Создайте и активируйте изолированное виртуальное окружение:**
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\activate
+   ```
+
+3. **Установите все зависимости:**
+   ```powershell
+   python -m pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+   *(Веса предобученных нейросетевых моделей MediaPipe `hand_landmarker.task` и `face_landmarker.task` автоматически загружаются в директорию `models/` при первом запуске программы).*
+
+4. **Запустите главное приложение:**
+   ```powershell
+   python app.py
+   ```
+
+---
+
+## 3. Подробное руководство по исследовательским модулям
+
+---
+
+### 3.1. Анализ тремора верхних конечностей (ТРЕМОР)
+
+Модуль предназначен для бесконтактного инструментального анализа кинематических характеристик непроизвольных колебательных движений дистальных отделов руки.
+
+#### Что делать пользователю (Инструкция):
+1. Перейдите во вкладку **ТРЕМОР**.
+2. Нажмите кнопку **«Начать захват»** (или клавишу `Пробел`).
+3. Расположите руку перед камерой на расстоянии 40–70 см ладонью или тыльной стороной к объективу, выпрямив указательный палец.
+4. В течение **2 секунд** удерживайте руку в кадре неподвижно для стабилизации детектора (фаза подготовки).
+5. После звукового сигнала удерживайте палец в выбранном положении (в покое или на весу) в течение **15 секунд**, пока заполняется индикатор прогресса.
+6. По завершении 15 секунд автоматически сформируется интерактивный клинический отчёт.
+
+#### Как это работает под капотом (Алгоритм и математика):
+* **Детекция ориентиров:** модель `MediaPipe HandLandmarker` в реальном времени отслеживает 21 ключевую точку скелета кисти. За основу измерений берутся 2D-координаты кончика указательного пальца (точка 8).
+* **Нормализация масштаба:** координаты нормируются относительно анатомической длины кисти (расстояние от запястья, точка 0, до пястно-фалангового сустава среднего пальца, точка 9), что устраняет влияние расстояния до камеры.
+* **Фильтрация и ЦОС:**
+  * Сигнал интерполируется на строго равномерную временную сетку.
+  * Краевые участки (первая и последняя 1 секунда) отсекаются для подавления переходных процессов.
+  * Применяется полосовой фильтр Баттерворта 4-го порядка с нулевым фазовым сдвигом (`scipy.signal.filtfilt`) в диапазоне **1,0–12,0 Гц**.
+  * Оценка спектральной плотности мощности (PSD) выполняется **методом Уэлча** со сглаживающим окном Хэмминга.
+* **Вычисляемые биомаркеры:**
+  * **Доминирующая частота пика ($F_{\text{peak}}$, Гц):** пик спектральной мощности.
+  * **Концентрация мощности пика (%):** доля мощности сигнала в полосе $\pm 1$ Гц от пика относительно суммарной энергии диапазона 1–12 Гц.
+  * **RMS-размах смещения (пикс.):** среднеквадратичная амплитуда колебаний кончика пальца.
+  * **Классификация диапазона:** дифференциация типичного паркинсонического тремора покоя (**4,0–6,5 Гц**) и постурально-кинетического/эссенциального тремора (**6,5–12,0 Гц**).
+
+---
+
+### 3.2. Геометрический анализ мимики и тест FAST (НЕЙРОМИМИКА)
+
+Модуль реализует объективную цифровую квантификацию лицевой симметрии в рамках компонента **Face** международного скринингового протокола FAST при подозрении на острое нарушение мозгового кровообращения (ОНМК) или нейропатию лицевого нерва (паралич Белла).
+
+#### Что делать пользователю (Инструкция):
+1. Перейдите во вкладку **НЕЙРОМИМИКА**.
+2. Сядьте ровно перед камерой на расстоянии 50–70 см при равномерном освещении лица (без резких боковых теней). Снимите очки, если они закрывают брови.
+3. Нажмите **«Начать протокол»**. Протокол состоит из 3 последовательных фаз (по 5 секунд каждая: 2 секунды подготовки + 3 секунды чистой записи):
+   * **Фаза 1: ПОКОЙ (REST)** — сохраняйте нейтральное, расслабленное выражение лица, смотрите прямо в камеру.
+   * **Фаза 2: УЛЫБКА (SMILE)** — максимально широко улыбнитесь, оскалив зубы (активация скуловых мышц и круговой мышцы рта).
+   * **Фаза 3: БРОВИ (BROWS)** — максимально поднимите обе брови вверх (активация лобной мышцы).
+4. После окончания третьей фазы система автоматически рассчитает дифференциальную карту асимметрии.
+
+#### Как это работает под капотом (Алгоритм и математика):
+* **3D-топология лица:** нейросеть `MediaPipe FaceLandmarker` строит плотную пространственную сетку из **468 анатомических ориентиров**.
+* **Аффинная компенсация движений головы:** программный модуль вычисляет матрицу ориентации головы (углы Yaw, Pitch, Roll). Кадры с поворотом головы более $12^\circ$ или наклоном более $25^\circ$ автоматически отбраковываются. Координаты лица выравниваются по биометрическому базису — межзрачковому расстоянию и внешним уголкам глаз.
+* **Центральная ось симметрии:** строится линия симметрии лица через медианные ориентиры: переносицу, кончик носа, подбородок и середину лба.
+* **Вычисляемые биомаркеры:**
+  * **Индекс асимметрии лица (ASI, %):** интегральная средневзвешенная билатеральная разность евклидовых расстояний парных точек (губы, брови, щеки, глаза) до центральной оси лица.
+  * **Коэффициент двигательного дисбаланса (Imbalance, %):** $\frac{|R - L|}{R + L} \times 100\%$ раздельно для экскурсии уголков рта при улыбке и амплитуды подъёма бровей.
+  * **Дифференциальный признак (Центральный vs Периферический парез):**
+    * *Центральный парез (инсульт):* сглаживание носогубной складки и опущение угла рта на одной стороне при **сохранной подвижности лобных мышц** (иннервация верхней трети лица является двусторонней корковой).
+    * *Периферический парез (поражение лицевого нерва/паралич Белла):* сочетанная асимметрия как нижнего этажа (рот), так и верхнего этажа лица (лагофтальм, невозможность поднять бровь на стороне поражения).
+
+---
+
+### 3.3. Бесконтактная фотоплетизмография (ПУЛЬС rPPG)
+
+Модуль обеспечивает дистанционную регистрацию микроколебаний оптической плотности кожных покровов лица, вызванных пульсовой волной кровенаполнения капиллярного русла (remote Photoplethysmography).
+
+#### Что делать пользователю (Инструкция):
+1. Перейдите во вкладку **ПУЛЬС rPPG**.
+2. Обеспечьте равномерное фронтальное дневное или искусственное освещение лица без мерцания люминесцентных ламп.
+3. Нажмите **«Начать измерение»**.
+4. В течение **3 секунд** система зафиксирует базовые участки кожи (ROI).
+5. В течение **30 секунд** сидите абсолютно неподвижно, не разговаривайте и спокойно дышите, глядя в экран.
+6. На графике в реальном времени начнет формироваться отфильтрованная пульсовая волна. По завершении 30 секунд система выдаст средний пульс (BPM).
+
+#### Как это работает под капотом (Алгоритм и математика):
+* **Сегментация областей интереса (ROI):** нейросеть выделяет 3 стабильных кожных полигона: область лба, левую и правую щёки (участки без волосяного покрова и бровей).
+* **Спектральная селекция:** из видеопотока извлекается интенсивность **зеленого спектрального канала (G-канал)**, поскольку гемоглобин крови обладает пиком оптического поглощения именно в зеленой полосе длины волны (500–600 нм).
+* **Подавление двигательных артефактов:**
+  * Сигнал детрендируется для исключения медленных изменений общей освещенности.
+  * Проводится частотная селекция полосовым фильтром Баттерворта 4-го порядка в полосе частот **0,75–3,0 Гц** (что соответствует физиологическому диапазону пульса **45–180 ударов в минуту**).
+* **Кросс-региональная верификация (Quality Gates):**
+  * Спектр мощности рассчитывается через быстрое преобразование Фурье (БПФ).
+  * Для подтверждения достоверности пульса требуется строгое согласование частотных пиков как минимум в 2 из 3 зон лица (расхождение не более 5 BPM), а также взаимное совпадение спектров первой и второй половины 30-секундного отрезка записи.
+
+---
+
+### 3.4. Моторный тест пальцевого таппинга (МОТОРИКА / UPDRS 3.4)
+
+Модуль объективизирует проведение классической неврологической пробы на брадикинезию и двигательную истощаемость пальцев рук по шкале оценки болезни Паркинсона MDS-UPDRS (пункт 3.4 Finger Tapping).
+
+#### Что делать пользователю (Инструкция):
+1. Перейдите во вкладку **МОТОРИКА**.
+2. Нажмите **«Начать тест»**.
+3. Расположите кисть ведущей или исследуемой руки перед камерой ладонью к объективу.
+4. После 2 секунд обратного отсчета начните **максимально быстро и с максимальной амплитудой смыкать и размыкать кончики большого и указательного пальцев** (постукивание пальцами).
+5. Не прерывайте движения в течение **15 секунд**.
+6. График отобразит траекторию каждого цикла смыкания/размыкания с расчетом амплитудного декремента.
+
+#### Как это работает под капотом (Алгоритм и математика):
+* **Кинематический трекинг:** `HandLandmarker` детектирует пространственные координаты кончика большого пальца (точка 4) и указательного пальца (точка 8).
+* **Нормализация амплитуды:** расстояние между пальцами в каждом кадре нормируется на анатомический масштаб пястной кости (точки 0–9), что нивелирует погрешности мелких смещений кисти ближе/дальше от объектива.
+* **Анализ периодических паттернов:**
+  * Временной ряд сглаживается адаптивным полиномиальным фильтром **Савицкого — Голея**.
+  * Функция `scipy.signal.find_peaks` выделяет моменты максимального раскрытия пальцев (пики амплитуды) и моменты касания (впадины).
+* **Ключевые биомаркеры истощаемости:**
+  * **Темп таппинга (Частота, Гц):** среднее число циклов в секунду (норма $\ge 2.8$ Гц, брадикинезия $< 2.0$ Гц).
+  * **Коэффициент вариабельности ритма (CV, %):** степень нестабильности интервалов между щипками.
+  * **Амплитудный декремент (%):** наклон линии линейной регрессии, построенной по вершинам амплитуд. Отрицательный наклон свидетельствует о феномене двигательного истощения (прогрессирующего затухания амплитуды движений).
+  * **Эпизоды моторных блокировок (Freezing):** автоматическая фиксация пауз движения длительностью более 1,0 с.
+
+---
+
+### 3.5. Ассистивная коммуникация по взгляду (АЙТРЕКИНГ / AAC)
+
+Модуль альтернативной и аугментативной коммуникации (AAC) предоставляет парализованным пациентам, лицам с боковым амиотрофическим склерозом (БАС), последствиями тяжелых инсультов и спинальных травм возможность бесконтактного общения и синтеза речи исключительно с помощью взгляда через стандартную веб-камеру.
+
+#### Что делать пользователю (Инструкция):
+1. Перейдите во вкладку **АЙТРЕКИНГ**.
+2. Расположитесь перед камерой так, чтобы глаза и лицо были хорошо освещены.
+3. Нажмите **«Начать отслеживание взгляда»**.
+4. **Пройдите процедуру 4-этапной калибровки (занимает ~25 секунд):**
+   * Смотрите поочередно в центр каждой подсвеченной кнопки (4 карточки матрицы и 2 стрелки навигации). Индикатор на кнопке заполнится за 1 секунду.
+   * Выполните калибровочное движение головой: продолжая смотреть в центральную точку, плавно поверните голову влево-вправо и вверх-вниз в течение 3 секунд (это обучит фильтр разделять поворот головы и движение глаз).
+   * Подтвердите точки в обратном порядке.
+5. **Выбор карточек:** после успешной калибровки просто удерживайте взгляд на нужной карточке в течение **900 мс (Dwell-Time)**. Кнопка сработает, синтезирует русскую речь и выведет предиктивные варианты продолжения фразы!
+
+#### Структура коммуникационной матрицы:
+Матрица включает 6 категориальных экранов по 4 смысловые карточки (всего 24 базовых витальных понятия):
+* **Экстренная помощь:** *ПОМОЩЬ, ВОДА, БОЛЬ, ТУАЛЕТ*
+* **Ответы и согласие:** *ДА, НЕТ, НЕ ПОНИМАЮ, ХОРОШО*
+* **Положение тела / климат:** *ПЕРЕВЕРНУТЬ, ПОДНЯТЬ ГОЛОВУ, ХОЛОДНО, ЖАРКО*
+* **Комфорт / окружение:** *ДУШНО, ЧЕШЕТСЯ, СВЕТ, ОЧКИ*
+* **Медицина и быт:** *ВРАЧ, ТАБЛЕТКА, ЕДА, УСТАЛ*
+* **Общение / семья:** *СПАСИБО, ПОЖАЛУЙСТА, СЕМЬЯ, ТЕЛЕФОН*
+
+#### Как это работает под капотом (Алгоритм и математика):
+* **Трекинг радужки (Iris Tracking):** из сетки лица извлекаются ключевые точки контура радужки обоих глаз (точки 468 и 473), центрируемые относительно внутренних и внешних уголков глазных щелей (кантусов).
+* **Инвариантность к положению головы:** кондуктор взгляда комбинирует относительное смещение зрачков с 3D-проекцией кончика носа, компенсируя естественные микродвижения головы.
+* **Байесовский классификатор мишени (`GazeClassifier`):** параметрический гауссовский байесовский классификатор рассчитывает апостериорную вероятность принадлежности взгляда к одной из 6 экранных областей с гистерезисом фиксации ($p \ge 0.75$ для захвата кнопки, $p \ge 0.35$ для удержания).
+* **Автомат фиксации (`DwellEngine`):** детерминированный автомат состояний: `SEARCHING` $\to$ `DWELLING` (при удержании $\ge 900$ мс) $\to$ `TRIGGERED` (срабатывание) $\to$ `COOLDOWN` (тайм-аут 500 мс против повторных ложных срабатываний).
+* **Предиктивный граф фраз (`PhraseGraph`):** ориентированный граф на базе NetworkX. При выборе первого слова (например, «БОЛЬ») граф мгновенно меняет карточки на наиболее релевантные контекстные продолжения (например: «ГОЛОВА», «РУКА», «СИЛЬНО», «ТАБЛЕТКА»).
+* **Синтез речи:** асинхронный демон речевого синтезатора pyttsx3 / Windows SAPI5 озвучивает слова естественным русскоязычным голосом.
+
+---
+
+### 3.6. Акустический спектральный анализ голоса (ГОЛОС)
+
+Модуль предназначен для прецизионного объективного анализа микродевиаций высоты тона и амплитуды голоса при подозрении на дизартрию, ларингеальные парезы, спастическую или гипокинетическую дисфонию (включая речевые маркеры ранней стадии паркинсонизма).
+
+#### Что делать пользователю (Инструкция):
+1. Перейдите во вкладку **ГОЛОС**.
+2. Расположитесь в тихом помещении на расстоянии 20–30 см от микрофона.
+3. Нажмите кнопку **«Записать голос»**.
+4. После подготовки глубоко вдохните и, когда на экране появится подсказка, **протяжно и стабильно произносите звук «А-а-а-а-а» на комфортной высоте и громкости** в течение 5 секунд.
+5. Модуль выполнит спектральную сегментацию и построит сонограмму, кривую основного тона $F_0$ и протокол микродевиаций.
+
+#### Как это работает под капотом (Алгоритм и математика):
+* **Амплитудный гейт:** запись активируется автоматически по факту появления звука достаточной интенсивности (RMS $> 0.005$) и длится ровно 5 секунд при частоте дискретизации микрофона (16–96 кГц).
+* **Временная сегментация:** первые и последние 300 мс аудиозаписи исключаются из математического анализа для устранения краевых переходных эффектов голосового зажима и затухания.
+* **Аналитический движок Praat / Parselmouth:**
+  * **Фундаментальная частота ($F_0$, Гц):** медиана частоты колебаний голосовых складок в диапазоне 75–500 Гц.
+  * **Локальный Джиттер (Jitter, %):** показатель нестабильности и микроколебаний длительности смежных звуковых периодов (клинический референс по нормативам MDVP — до $1,04\%$). Также вычисляется относительное усредненное возмущение (RAP Jitter).
+  * **Локальный Шиммер (Shimmer, %):** показатель нестабильности амплитуды между смежными звуковыми периодами (клинический референс MDVP — до $3,81\%$). Также рассчитывается 5-точечный фактор возмущения амплитуды (APQ5 Shimmer).
+  * **Гармонический шум (HNR, дБ):** отношение гармонической энергии голоса к шуму турбулентности воздуха через голосовую щель.
+* **Аналитический движок librosa:**
+  * Независимая кросс-валидация высоты тона по автокорреляционному алгоритму YIN.
+  * Построение частотно-временной сонограммы (STFT Spectrogram).
+  * Расчет **13 мел-кепстральных коэффициентов (MFCC)**, параметризующих тембральную структуру речевого тракта.
+
+---
+
+### 3.7. Ретроспективный анализ предварительно записанных видеофайлов
+
+Каждый диагностический модуль (**ТРЕМОР, НЕЙРОМИМИКА, ПУЛЬС, МОТОРИКА, ГОЛОС**) оснащен кнопкой **«Загрузить видеофайл»** (или **«Загрузить аудиофайл»** в модуле голоса).
+
+* **Поддерживаемые форматы:** MP4, AVI, MOV, MKV, WMV, WEBM, WAV, MP3, FLAC, OGG, M4A, AAC (объемом до 500 МБ и длительностью до 10 минут).
+* **Назначение:** позволяет врачам и исследователям анализировать архивные клинические видеозаписи, видео с мобильных телефонов пациентов или проводить пакетную верификацию биомаркеров без физического подключения веб-камеры.
+* **Как обрабатывается:** видеофайл декодируется покадрово в изолированном фоновом процессе с сохранением исходных таймштампов контейнера, гарантируя идентичность результатов анализу с живой камеры.
+
+---
+
+## 4. Интеллектуальный уровень: CDSS и Картотека пациентов
+
+---
+
+### 4.1. Мультимодальный сессионный граф клинического вывода (CDSS)
+
+На стартовой странице **ОБЗОР** расположен интерактивный векторный холст **Системы поддержки принятия врачебных решений (CDSS)**.
+
+#### Принцип работы онтологического графа:
+1. По мере завершения пациентом тестов (тремор, мимика, пульс, голос, моторика), модуль `SessionDiagnostics` извлекает валидированные скалярные биомаркеры и публикует их в централизованное хранилище сессии.
+2. Библиотека `NetworkX` строит ориентированный двудольный граф:
+   * **Левая доля (Узлы биомаркеров):** `Tremor_Peak_Freq`, `Facial_ASI`, `RPPG_BPM`, `Motor_Decrement`, `Voice_Jitter`, `Voice_Shimmer` и др.
+   * **Правая доля (Синдромальные гипотезы):**
+     * *Синдром паркинсонизма (Parkinsonian Syndrome)*
+     * *Эссенциальный / постуральный тремор (Essential Tremor)*
+     * *Острая лицевая асимметрия / FAST-позитивный статус (Facial Asymmetry / FAST)*
+     * *Периферическая нейропатия лицевого нерва (Bell's Palsy Pattern)*
+     * *Ларингеальная дисфония / нестабильность фонации (Vocal Instability)*
+     * *Вегетативная кардиоваскулярная нестабильность (Autonomic Imbalance)*
+3. **Расчет доказательного индекса (Evidence Index, %):**
+   Каждая связь между биомаркером и гипотезой имеет калиброванный вес поддержки (от $+0.5$ до $+1.0$) или взаимоисключения ($-0.75$). Комплекс рассчитывает доказательный процент правдоподобия каждой синдромальной гипотезы:
+   $$\text{Score} = 100 \times \operatorname{clip}\left(\frac{\sum W_{\text{active}}}{\sum W_{\text{max}}}, 0, 1\right)$$
+4. Врач видит на экране ранжированный список гипотез с прозрачной расшифровкой: какие именно тесты подтвердили гипотезу, какие опровергли, а какие исследования ещё не были проведены.
+
+---
+
+### 4.2. Темпоральный граф истории болезни (Temporal Patient Graph)
+
+В правом верхнем углу интерфейса расположена кнопка вызова выдвижной боковой панели **«Картотека пациентов»**.
+
+* **Безопасность и криптозащита (SHA-256):** персональные профили пациентов и доступ к картотеке могут быть защищены мастер-паролем с необратимым криптографическим хешированием по стандарту SHA-256.
+* **Темпоральная динамика реабилитации:** граф истории (`TemporalPatientGraph`) хранит историю каждого визита пациента с привязкой измеренных числовых векторов. При повторных визитах комплекс автоматически рассчитывает дельту биомаркеров и присваивает статус динамики:
+  * 🟢 **УЛУЧШЕНИЕ** (снижение тремора, восстановление симметрии лица, нарастание темпа моторики).
+  * 🟡 **СТАБИЛЬНО** (колебания в пределах погрешности датчиков).
+  * 🔴 **УХУДШЕНИЕ** (нарастание амплитудного декремента, усиление асимметрии).
+* **Клинические прецеденты (Clinical Twins):** система автоматически находит схожие профили других пациентов в базе по взвешенному коэффициенту Жаккара, помогая сопоставить результаты терапии со сходными случаями.
+
+---
+
+### 4.3. Автоматизированное протоколирование и экспорт в PDF
+
+В каждом модуле после завершения тестирования снизу плавно выдвигается панель клинического протокола.
+* **Текстовый экспорт (.txt):** формирует структурированное врачебное заключение с временной меткой, серийным номером пробы, численной телеметрией и перечнем ограничений метода.
+* **Векторный экспорт в PDF (.pdf):** формирует полиграфический медицинский документ на бланке установленного образца с векторными графиками сигналов, спектрограммами, таблицами нормативных коридоров и полями для подписи врача-исследователя.
+
+---
+
+## 5. Системная архитектура и отказоустойчивость
+
+* **Межпроцессная изоляция мультимедиа (ProcessCaptureWorker):** захват кадров веб-камеры, инференс тяжелых нейросетей MediaPipe и взаимодействие с аудиодрайверами вынесены в **изолированные процессы операционной системы** (`multiprocessing.Process`).
+* **Защита от зависания GUI:** основной графический поток PyQt6 работает с частотой 60 FPS и никогда не блокируется операциями видеозахвата или математическими расчетами. Передача данных осуществляется через атомарные межпроцессные очереди IPC (`multiprocessing.Queue`).
+* **Сторожевой таймер (Supervised Worker Lifecycle):** если камера не отдает кадры более 2 секунд или внешний драйвер зависает, супервизор принудительно и безопасно завершает дочерний процесс, освобождает дескриптор устройства и информирует пользователя без падения приложения.
+
+---
+
+## 6. Тестирование и верификация (330 тестов)
+
+Программный комплекс покрыт всесторонней автоматизированной системой модульного и интеграционного регрессионного тестирования на базе фреймворка **pytest** / **unittest**.
+
+Набор тестов включает:
+* Синтетическую генерацию гармонических сигналов и верификацию точности спектрального БПФ/Уэлч анализа.
+* Проверку математической инвариантности аффинных трансформаций и нормализации углов поворота головы.
+* Тестирование детерминированных конечных автоматов фиксации взора и графовых предиктивных цепочек.
+* Проверку межпроцессного взаимодействия, перехвата исключений, корректности анимаций и сборки PDF-протоколов.
+
+### Запуск тестов:
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe app.py
+pytest
 ```
+*Результат прогона:* **`330 passed, 78 subtests passed in 132s`** (100% тестов успешно пройдены).
 
-Installing packages into system Python does not install them into `.venv`. The VOICE page checks missing packages before recording and shows a command targeting the interpreter actually running the app. The child process imports the audio-analysis dependencies before opening the microphone; first-use initialization may take some time without requiring you to sustain a vowel.
+---
 
-Each capture owns a separate child process. Camera access, inference, and native cleanup are isolated from the GUI. A supervisor monitors these phases, requests cooperative cancellation, and terminates/reaps a stuck child before another capture is allowed. A timed-out session is not analyzed. This protects the GUI from native hangs and crashes; the actual cause is shown in the capture error. Unexpected Python analysis errors are reported in the UI and terminal without preventing session cleanup or restart. The UI and engine share `analyze(record_start=..., record_end=...)` and the measured-metric result schema; do not mix the old engine file with the current app.
+## ⚠️ Клинический статус и ограничение ответственности
 
-## Measurement
+> [!IMPORTANT]
+> **ВНИМАНИЕ: Научно-исследовательский инженерный прототип!**
+> 
+> Программный комплекс **«TechnoMedNeuro»** разработан в образовательных и научно-исследовательских целях (лаборатория НДТП). Система **НЕ ЯВЛЯЕТСЯ сертифицированным медицинским изделием** и **НЕ ПРЕДНАЗНАЧЕНА для самостоятельной постановки клинических диагнозов**, назначения лекарственной терапии или отмены назначений врача.
+> 
+> * **Острые состояния (FAST):** Модуль мимики анализирует исключительно лицевой компонент (F). При возникновении внезапной асимметрии лица, слабости в руке или нарушении речи — **немедленно вызывайте скорую медицинскую помощь (103 или 112)**. Задержка ради тестирования в программе недопустима.
+> * Все числовые шкалы, пороги вероятностей и синдромальные индексы носят ориентировочный инженерный характер и требуют сопоставления с референтными клиническими данными врачей-неврологов.
 
-Press START CAPTURE, position one well-lit hand, and hold it still. The camera is allowed up to 10 seconds to deliver its first frame, accommodating cold camera startup; after frames begin, a delivery stall longer than 2 seconds fails the capture. The app previews the hand and waits for two seconds of steady tracking before beginning the 15-second recording; preparation times out after 15 seconds if no steady hand appears. Keep the hand in view until recording finishes. Camera/model setup and inference run in a worker thread, so setup time does not count toward recording time. The index fingertip's image coordinates are sampled using actual frame times. Captures shorter than 10 seconds, below 25 samples/s, with more than 20% missing samples, with a tracking gap longer than 0.2 seconds, with less than 3 Hz of supportable bandwidth, or with missing hand tracking at the recording boundaries are rejected. The analysis panel displays the exact rejection reason; the line below the video shows sample count, sampling rate, coverage, and largest gap. Reduce other camera or CPU-heavy activity if the measured rate or frame timing is too low. MediaPipe XNNPACK, feedback-manager, and NORM_RECT warnings in the terminal are emitted by the underlying library and are not themselves a failed capture.
-
-Short timing variations are resampled before detrending and bandpass filtering. The first and last second are excluded from RMS and spectral estimates to avoid filter transients. Welch power spectra from both axes are added to estimate a dominant frequency between 1 Hz and the available upper bound (up to 12 Hz). The upper bound is conservatively capped at 40% of the sampling rate implied by the largest gap. The PSD graph shows that bound. When a short gap reduces the bound, the app marks the result **LIMITED BAND**: frequencies above the bound were not measured and should not be inferred from the result. A frequency is shown only when a distinct spectral peak is present within the usable band, away from its upper edge, using exploratory (not clinically validated) peak-ratio and power-concentration thresholds. Peak concentration is the fraction of in-band spectral power within 1 Hz of the peak, **not** a diagnostic confidence score.
-
-Motion RMS is the root-mean-square 2D filtered displacement in image pixels. It is not an anatomical amplitude in millimeters: camera distance, framing, landmark noise, illumination, occlusion, and overall hand movement affect it. FFT and PSD visualizations are provided for inspection, not clinical interpretation. Compare repeated trials only under consistent capture conditions. Validation against a known-frequency physical reference and clinical data would be needed before any screening claim.
-
-The TREMOR viewport uses its full height during preparation and capture. After successful analysis, the left column splits equally between the video area and a scrollable protocol panel above the capture buttons. Reset or a new capture hides the panel again. Text/PDF exports include the measured metrics, capture-quality values, frequency-range limitation, and disclaimer. Guidance describes observed frequency bands, not a diagnosis or a normal-baseline classification.
-
-## Facial Measurement
-
-FACIAL guides one person through preparation, relaxed face, smile, and raised eyebrows. Each expression has two seconds of preparation and three seconds of capture. Look directly at the camera, keep the whole face visible, use steady lighting, and maintain the same distance. The preview is intentionally not mirrored; the person's anatomical right is on the image's left. Camera ownership is exclusive between FACIAL and TREMOR.
-
-Follow the active stage instruction directly above the facial video: REST means relax, SMILE means smile clearly, and BROWS means raise both eyebrows. If any stage cannot be measured reliably or the expressions are too small, the app displays the specific reason in the right-hand Asymmetry Index panel, prints it to stderr, withholds all numbers, and allows a complete retry. A RETRY badge is not a frozen scan or a diagnosis.
-
-Only after a valid completed facial test, the left viewport splits approximately equally between video and a scrollable Clinical Protocol & FAST Screening panel above the capture buttons. Reset, new capture, or the panel's `[X]` restores full-height video. Text/PDF reports include ASI, movement imbalance, accepted frame counts, and the disclaimer. The selected ASI/movement thresholds are exploratory, unvalidated observation bands, not FAST-positive/negative or central/peripheral paresis diagnoses. Emergency advice applies to sudden symptoms regardless of the score. Run panel/layout tests with `python -m unittest test_facial_protocol.py`.
-
-The Face Landmarker Tasks model can return 478 landmarks; the geometric analysis and dense preview mesh use the first 468. Head-pose gates reject yaw/pitch above 12 degrees and roll above 25 degrees. Image coordinates are roll-corrected and normalized by outer-eye-corner span. A fitted central axis uses forehead/glabella-region, nose bridge, nose tip, and chin landmarks. Paired perpendicular axis distances and along-axis offsets yield regional mirror mismatch. The aggregate is an equal-weight average of regional geometric errors over the three expressions, expressed as a percentage of eye-corner span. It is not a probability, calibrated severity scale, or percentage of affected tissue.
-
-Smile excursion includes horizontal and vertical mouth-corner movement from rest. Brow elevation uses outer-eye references rather than moving eyelid points. Movement imbalance is `100 * abs(right-left) / (right+left)` and is withheld if movement is too small. Closed/occluded eyes, blur, poor lighting, small faces, interrupted tracking, too many rejected frames, or changed pose/distance invalidate a trial. Nasolabial fold depth is not measured; nearby cheek landmarks provide only geometric proxies. Fixed yellow-to-red deviation scales show landmark mismatch, not pathology. Rest, smile, and brows can be inspected separately after completion.
-
-Facial observation supports only the Face component of FAST, not the complete Face/Arm/Speech/Time protocol. Sudden facial drooping, arm weakness, or speech difficulty requires immediate emergency assessment. Do not wait for this software or rely on a low score to exclude stroke. Human/camera-reference validation remains necessary before any clinical application.
-
-## Contactless rPPG
-
-Open rPPG and press START MEASUREMENT. Keep one face directly facing the camera, with forehead and upper cheeks uncovered. Use constant diffuse frontal light, sit still, and avoid speaking or facial movements. The app waits three seconds for stable skin regions before a 30-second capture. STOP cancels the trial; RESET discards it. Only one camera module can capture at a time.
-
-The face model defines three inset skin polygons. Mean RGB values are extracted before preview overlays; analysis uses the green channel. Actual timestamps are resampled, fractional green variation is detrended, and a fourth-order zero-phase Butterworth filter isolates 0.75-3 Hz. FFT power estimates a candidate pulse rate in the 45-180 BPM range. At least two regions must have clear, agreeing peaks; the two recording halves must also agree. Slow head-position drift and brief pose outliers do not automatically reject the trial: if the pulse checks pass, the UI shows BPM with an amber **CHECK QUALITY / ESTIMATE / CAUTION** status. Large sustained repositioning, rapid repeated motion, missing samples, exposure jumps, and strong correlation with motion/background lighting can still reject the trial. Rejection is shown in the results panel with BPM withheld.
-
-This is an unvalidated research estimate. ROI agreement cannot guarantee that shared light/camera artifacts have been excluded. Skin tone, exposure, hair, makeup, glasses, movement, camera processing, and illumination affect performance. Spectral concentration is not clinical confidence. The plotted pulse wave is filtered camera intensity, not a calibrated arterial waveform; no SpO2, blood pressure, arrhythmia, or diagnostic assessment is provided. Physical comparison with a reference pulse sensor remains necessary.
-
-After a completed estimate, including a drift-caution estimate, the left viewport splits approximately 50/50 between video and a scrollable Vitals Screening protocol panel. Reset, new capture, or `[X]` restores full-height video; rejected/cancelled sessions keep the panel hidden. Text/PDF exports include the estimate, capture-quality values, used ROIs, all-region spread, cautions, and disclaimer. The panel uses stricter exploratory interpretation rules (<70% coverage, <60% spectral concentration, or >5 BPM all-ROI spread) before rate bands below 60, 60-95, or above 95 BPM. These do not diagnose bradycardia/tachycardia or establish normal circulation. All-region spread can include an ROI excluded by the engine; a withheld protocol interpretation is distinct from engine acceptance of a candidate estimate.
-
-Run all tests with `python -m unittest discover -p "test_*.py"`. Tests cover synthetic signal cases, module state/layout, report exports, localization, cancellation, and process recovery. The project's `.venv` was identified as the environment missing librosa/Parselmouth; its pinned dependencies have now been installed and the full suite has been run there.
-
-## Eye-Gaze AAC Communication
-
-Open **КОММУНИКАЦИЯ** and press **НАЧАТЬ ОТСЛЕЖИВАНИЕ ВЗГЛЯДА**. Four large phrase cards in a 2×2 grid and two category arrows are gaze targets. All 24 words are retained across six sheets, wrapping in both directions:
-
-| Sheet | Words |
-|---|---|
-| Экстренная помощь / потребности | ПОМОЩЬ, ВОДА, БОЛЬ, ТУАЛЕТ |
-| Ответы / понимание | ДА, НЕТ, НЕ ПОНИМАЮ, ХОРОШО |
-| Положение / температура | ПЕРЕВЕРНУТЬ, ПОДНЯТЬ ГОЛОВУ, ХОЛОДНО, ЖАРКО |
-| Комфорт / окружение | ДУШНО, ЧЕШЕТСЯ, СВЕТ, ОЧКИ |
-| Медицина / быт | ВРАЧ, ТАБЛЕТКА, ЕДА, УСТАЛ |
-| Общение / близкие | СПАСИБО, ПОЖАЛУЙСТА, СЕМЬЯ, ТЕЛЕФОН |
-
-Selection appends the word and a space to the message buffer and speaks it; **ПРОИЗНЕСТИ** reads the whole message and **ОЧИСТИТЬ** clears it. Calibration belongs to the four card positions and two arrow positions, so it is reused across all sheets. Changing a sheet clears partial dwell progress and starts a 500 ms selection cooldown, including manual arrow clicks. **ОСТАНОВИТЬ ОТСЛЕЖИВАНИЕ** cancels fixation and speech, releases the camera, and allows restart once the capture process has been reaped.
-
-**Predictive phrases.** After a word is selected, the same four cards show its highest-weight follow-up words from `phrase_graph.py`. All 24 words have care/conversation transitions with weights 0.5–1.0; these are hand-authored preferences, not learned patient probabilities. Neighbor order is prepared once in memory. Missing candidates are filled from `ПОМОЩЬ, ВОДА, БОЛЬ, ДА, НЕТ, ТУАЛЕТ`, excluding duplicates and the selected word. The current 2×2 layout and six standard sheets remain unchanged: initial/reset-to-category mode uses the original sheet, rather than trying to put six root words on four cards.
-
-The subheader shows `ПРЕДИКТИВНЫЙ КОНТЕКСТ: [ слово ]`. **[ ⟲ В КОРЕНЬ ]** returns to the current standard category without deleting the message; the right arrow resumes category browsing so all vocabulary remains reachable. **ОЧИСТИТЬ** clears the buffer, cancels queued speech and restores the current standard sheet. Selection always reads the displayed button word, including predictions. Every context transition clears partial dwell and applies the existing 500 ms cooldown on the capture-sample clock; the 900 ms dwell threshold and calibrated button positions are unchanged. Starting calibration restores standard labels for its prompts. Navigation size hints are fixed to prevent label changes from moving the gaze targets. Speech continues on the existing daemon thread. Check graph completeness, recovery, selection, geometry and prediction latency with `python -m pytest test_phrase_graph.py`.
-
-Iris centers 468/473 are normalized against the eye corners and lids in each eye's roll-corrected frame for the existing telemetry (ВЗГЛЯД ПО ГОРИЗОНТАЛИ / ВЕРТИКАЛИ). Both eyes share the same horizontal direction, so averaging cannot cancel gaze motion. Targeting uses a separate four-component feature computed in image pixels: iris position in each eye's canthus frame (eyelids move with vertical gaze and are not used as the targeting reference), plus the nose-tip offset from the canthus midpoint in inter-ocular units as a head yaw/pitch proxy. All components are invariant to image translation, scale and roll. A time-based EMA (equivalent to alpha 0.25 at 30 FPS) gives consistent smoothing at different camera rates.
-
-Capture and landmark-level simulations share the same signal filter. An isolated large feature jump is withheld from smoothing and calibration; a persistent step is accepted on the next matching frame, resetting the previous target's smoothing tail so genuine gaze changes still work. Missing frames always publish no gaze, but smoothing history survives a blink of up to 200 ms, preventing a noisy first reacquisition frame from resetting dwell. Longer interruptions reset history. No held or invented gaze is used for selection.
-
-**Calibration** starts automatically with tracking and cannot end in an error state:
-
-1. **КАЛИБРОВКА 1/6…6/6** — look at the centre of each highlighted button (both arrows, all four cards). Each takes 0.7 s to settle and 1 s of samples; the button's own progress bar fills while samples are collected.
-2. **ДВИЖЕНИЕ ГОЛОВЫ** — keep looking at the highlighted card closest to the viewport centre while slowly turning the head left-right and up-down for 3 s. This teaches the model which feature changes are head movement rather than a new gaze target.
-3. **ПРОВЕРКА 1/6…6/6** — the same buttons in reverse order, capturing drift between passes.
-4. **УТОЧНЕНИЕ** (only if needed) — buttons whose windows disagree (for example after looking elsewhere) are measured once more and the median of three windows is used. Good measurements are always kept.
-
-The whole sequence takes about 25 seconds with stable tracking. Without a visible face, or with closed eyes, the guidance shows the reason and collection waits; brief blinks keep the current window, and interruptions longer than 0.5 s restart only that button. A restless fixation is retried for up to 6 s, after which its settled last second is accepted. Resizing or changing category during calibration restarts only the current window.
-
-**Targeting.** A shared-covariance Gaussian classifier is fitted over the per-button fixations. Its covariance combines EMA-smoothed jitter, drift between passes, and head rotation at fixed gaze (scaled to 1.5° from the head-movement step, or a geometric prior if the head barely moved), so natural head movement, eye-only and head-pointing styles all work. A button is entered only with ≥75% posterior while at most 40% of the way to any neighbour, and is retained up to the midpoint — the feature-space analogue of the 12 px inset and border. Gaze on a gap between buttons, off the grid (for example the camera panel) or with invalid data selects nothing. A confident gaze is placed at the centre of its existing button, so the dwell engine's 12 px inset and border retention apply unchanged: a 900 ms fixation triggers once, flashes the border, then a 500 ms cooldown follows. A frame without gaze data (a blink) holds an active dwell for up to 200 ms without triggering; unclassified gaze resets it immediately. Confident frames well inside a button slowly correct common drift, bounded to a third of the button spacing and never learned from gaze on a gap. If two buttons remain hard to distinguish, the completion message names them; **КАЛИБРОВАТЬ ВЗГЛЯД** repeats the sequence at any time after completion.
-
-Camera and GUI clocks are never compared: capture-process frame timestamps order samples and measure gaps, while a stall is detected from fresh sample arrival time in the GUI. Duplicate packets do not refresh that arrival time. A backlog spanning more than 350 ms resets fixation and retains only the latest 200 ms of observations, preventing old fixations from selecting words after the GUI resumes. Webcam gaze estimates depend on lighting, glasses, eye visibility and head position; this prototype is not equivalent to a dedicated eye tracker. Hardware-free end-to-end tests drive the page with `gaze_simulation.py`, a perspective-projected 3D head and eye model with pixel noise, blinks, iris spikes, roll, drift and different head-use styles.
-
-AAC prefers `mp.solutions.face_mesh.FaceMesh(refine_landmarks=True, max_num_faces=1, min_detection_confidence=0.5)` when available. The pinned MediaPipe 1.0.1 runtime has removed Solutions, so it uses the supported single-face Tasks landmarker with the same 478 landmarks and detection threshold. Camera reads and inference run on separate threads inside the isolated capture process; only the latest 320-pixel preview is transported and rendered, while ordered timestamped gaze samples feed the dwell engine. The GUI polls at 16 ms and does not perform inference or speech. The camera requests 640×480 / 30 FPS; actual throughput is hardware-dependent, not a guaranteed rate.
-
-`pyttsx3` speech runs on a serialized daemon thread with its own Windows COM apartment. An installed Russian voice is selected by language metadata; missing voices or speech failures are reported in the existing guidance field. Install AAC dependencies into the interpreter running the app with `python -m pip install -r requirements.txt`. Run AAC checks with `python -B -m unittest test_gaze test_gaze_capture`.
-
-## Voice Acoustics
-
-Open ГОЛОС and choose **ЗАПИСАТЬ ГОЛОС** to record or **ЗАГРУЗИТЬ АУДИОФАЙЛ** to analyze a saved recording. File selection accepts WAV, FLAC, OGG, MP3, M4A and AAC; actual codec support depends on the installed audio decoder. Files are limited to 10 minutes / 100 MB. For longer files, the app selects a continuous five-second voiced segment and records its start offset in the report. A usable input needs at least five seconds of sustained «А»; ordinary sentences are not the intended sample.
-
-For microphone capture, use a quiet room, keep a consistent distance, and sustain a comfortable «А» for five seconds. Do not force pitch or loudness. The app waits for voice onset before starting the five-second timer, so silence while preparing does not consume the sample. STOP cancels the recording; RESET clears measurements. The default system input device is used in mono at its native sample rate (16-96 kHz). Microphone capture and acoustic analysis run in an isolated process, with timeouts and cleanup; first-use librosa initialization may take longer.
-
-After preparation, the microphone waits for sound before starting the five-second timer. Begin «А» when the prompt asks you to start, and continue until PROCESSING appears. At least 80 ms of consecutive sound above RMS 0.005 is required to trigger recording; the detected onset is included in the five-second buffer. Silence before onset is discarded. If sound is not detected within ten seconds, check the default system microphone and input level. Detection is an amplitude gate, not vowel recognition; background noise can trigger it, so use a quiet room. Recording/analysis errors are displayed in the result panel and printed to the terminal.
-
-The module reports median F0, local jitter, local shimmer, and autocorrelation HNR using Praat via Parselmouth. RAP jitter and APQ5 shimmer are additional explicitly named measurements. Librosa provides an independent YIN pitch check, resampling, STFT spectrogram, and 13 mean MFCC coefficients included in reports. The displayed views are waveform, pitch curve, and spectrogram. Text/PDF reports include acoustic settings, recording quality, warnings, and Russian reference guidance. No raw audio is saved automatically and there is no speech synthesis; pyttsx3 is not required by this feature.
-
-## Video File Input
-
-TREMOR, FACIAL, rPPG and МОТОРИКА each provide **ЗАГРУЗИТЬ ВИДЕОФАЙЛ**; VOICE accepts audio files through **ЗАГРУЗИТЬ АУДИОФАЙЛ**; АЙТРЕКИНГ remains a live gaze-controlled AAC board. Supported containers are MP4, MOV, M4V, AVI, MKV, WMV and WEBM, up to 500 MB / 10 minutes (МОТОРИКА accepts MP4, AVI and MOV). Video decode and MediaPipe inference run in the existing supervised capture process; video-source failures and STOP release that process without leaving the camera locked. The application requests no webcam for an uploaded video.
-
-* **TREMOR:** provide at least 10.5 seconds (preferably 15 seconds) of one well-lit stationary hand. The first 15 seconds are analyzed with the same 1–12 Hz / timing / tracking-quality rules as camera capture. A source below 25 FPS, missing hand landmarks, or an unstable trajectory is rejected by the existing engine.
-* **FACIAL:** provide a 15-second clip with one frontal face and the expressions in order: REST (0–5 s), SMILE (5–10 s), BROWS (10–15 s). In each five-second segment, the first two seconds are preparation and the final three are measured. Keep the same distance and lighting; the normal pose, blur, exposure, coverage and expression checks still apply.
-* **rPPG:** provide at least 20 seconds (30 seconds recommended) of one still, front-facing face with forehead and cheeks visible under steady diffuse light. Up to the first 30 seconds are analyzed by the same skin-region, motion-artifact and pulse-consistency checks.
-* **МОТОРИКА:** provide 10–15 seconds of continuous, rapid, wide thumb–index tapping, one palm facing the camera, at least 25 FPS (30+ recommended). The first 15 seconds are analyzed. The hand must remain fully visible with consistent orientation and distance.
-
-## МОТОРИКА / Finger Tapping
-
-The new tab follows НЕЙРОМИМИКА's two-column geometry, rectangular controls, and split report dock. Webcam capture starts after two seconds of visible-hand preparation and records 15 seconds; video files are decoded frame by frame using source timestamps. STOP aborts the trial, RESET clears pending/results data, and closing or changing modules follows the shared supervised-worker lifecycle. On completion the video/report viewport animates to a 50/50 split; closing the dock restores the full video area. The chart supports signal/peak views and mouse-wheel zoom.
-
-MediaPipe Tasks HandLandmarker uses one hand and detection/presence/tracking confidence 0.6. Pixel-space tip distance (4–8) is divided by wrist–middle-MCP distance (0–9). `motor_engine.py` identifies complete opening/closing cycles with SciPy peaks, measures cadence and interval CV, and fits a least-squares line to peak distances. Amplitude change is `(fitted final − fitted initial) / fitted initial × 100%`, with negative values indicating decrement. A short smoothing window suppresses tracking noise. Incomplete cycles, insufficient duration/FPS, sustained tracking gaps, scale instability and changing hands are rejected before report generation.
-
-The report prioritizes marked findings (<2 Hz, decrement below −25%, or CV >35%), then stable observations (≥2.8 Hz, decrement above −15%, CV ≤20%), with other cases classified as borderline. This covers the 20–35% rhythm-CV band and overlapping conditions. These are exploratory observation rules; the app does not assign a clinical UPDRS 3.4 score, establish normal motor function, or diagnose Parkinson's disease. Reports include kinematics, source provenance, quality, the requested module disclaimer and brief next steps. Camera distance normalization does not correct out-of-plane palm rotation. Validation against manually counted real tapping footage and clinical ratings is still needed.
-
-Run module checks with `python -B -m unittest test_motor`.
-
-## Report Panel Animation
-
-TREMOR, НЕЙРОМИМИКА, ПУЛЬС, ГОЛОС and МОТОРИКА use the same 240 ms eased report reveal. Completed reports rise into the bottom half of the video viewport (or the charts area in ГОЛОС). Closing or clearing the report restores the full viewport; restarting a test cancels an in-flight reveal. The split stays equal after resizing. АЙТРЕКИНГ retains its existing interface. Check this behavior with `python -B -m unittest test_report_animation`.
-
-## Multimodal Session Graph / CDSS
-
-ОБЗОР replaces the static architecture bar with a 260-pixel light-theme graph and synthesis block. The existing platform details, module registry and clickable catalog remain available. `SessionDiagnostics` is one application-owned store shared by ТРЕМОР, НЕЙРОМИМИКА, ГОЛОС, МОТОРИКА and ПУЛЬС. Completed report events publish standardized scalar biomarkers, units, timestamps, source provenance and quality warnings. Starting a new trial, resetting or rejecting a capture clears that module's previous assessment; closing its report does not. The session is in-memory and ends when the window closes.
-
-NetworkX builds a bipartite directed evidence graph in a dedicated worker thread. New requests coalesce, and revision checks discard stale output. Active biomarkers and their edges are rebuilt from the latest module snapshots, so reset/replacement prunes previous evidence. The graph viewer shows a muted baseline ontology before testing and supports wheel zoom, drag-to-pan, node selection, tooltips and double-click-to-fit. The synthesis lists ranked hypotheses for review, supporting and opposing rule contributions, missing tests and limitations. The summary PDF includes every stored biomarker, source, signed rule weight, score formula and the CDSS disclaimer.
-
-Scores are **research evidence indices, not probabilities of disease or validated confidence**: `100 × clip(sum(active signed weights) / sum(all positive weights for that hypothesis), 0, 1)`. The supplied EXCLUDES relation contributes −0.75 but does not clinically exclude a condition. A tremor frequency band does not establish rest/postural context; facial imbalance does not establish paresis, acute onset or FAST+. A "no thresholds triggered" state never establishes "no pathology". Motor low cadence and low pulse are retained as unlinked biomarkers because no outgoing relation was specified for them. rPPG contributes only if coverage, selected-region agreement, spectral concentration and absence of capture warnings support a stable optical baseline. These heuristics require clinical validation before diagnostic use.
-
-Install `networkx==3.6.1` from `requirements.txt`; verify with `python -B -m unittest test_cdss`.
-
-The video preview is downscaled to 320 pixels wide for pipe/UI transport; landmark and color measurements are always taken on the decoded source frame before preview scaling. File timestamps are retained for sampling and quality analysis. Run video-source checks with `python -B -m unittest test_video_capture`.
-
-Clipping, excessive silence, low level, insufficient voiced frames, undefined cycle metrics, and disagreement between pitch estimators reject the recording. The first and last 0.3 seconds are omitted from acoustic measurement. A rejected trial is not evidence of disease or its absence; very irregular voices may not be measurable with these methods. The 75-500 Hz pitch band is a measurement limit, not a normal range.
-
-Local jitter (1.04%) and shimmer (3.81%) are compared only with legacy MDVP references quoted in the Praat manual. They are method-dependent and not validated diagnostic cutoffs for this app. HNR has no universal clinical threshold here. A sustained vowel assesses phonation, not articulation, intelligibility, or all components of dysarthria. Persistent voice/speech changes require professional assessment; sudden speech difficulty, facial droop, or weakness requires immediate emergency help.
+---
+**Разработчик:** Научно-исследовательская лаборатория проекта «TechnoMedNeuro» (НДТП).

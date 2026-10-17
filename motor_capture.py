@@ -1,4 +1,4 @@
-"""Supervised webcam/file capture for the finger-tapping module."""
+# захват видео и трекинг пальцев для теппинга
 
 import time
 from pathlib import Path
@@ -15,7 +15,8 @@ from motor_engine import finger_separation
 from video_capture import validate_video, source_timestamp, _preview, _packet
 
 
-MOTOR_VIDEO_FILTER = 'Видеофайлы (*.mp4 *.avi *.mov);;Все файлы (*.*)'
+motor_video_filter = 'Видеофайлы (*.mp4 *.avi *.mov);;Все файлы (*.*)'
+MOTOR_VIDEO_FILTER = motor_video_filter
 
 
 def _motor_process(connection, stop, duration, preparation_duration, path=''):

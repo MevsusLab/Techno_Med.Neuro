@@ -8,12 +8,20 @@ from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtWidgets import QFileDialog, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 
-JITTER_REFERENCE = 1.04
-SHIMMER_REFERENCE = 3.81
-FACIAL_REGION_NAMES = {'mouth': 'рот', 'eyes': 'глаза', 'brows': 'брови', 'cheeks': 'щёки'}
-FACIAL_STAGE_NAMES = {'rest': 'Покой', 'smile': 'Улыбка', 'brows': 'Брови'}
-ROI_NAMES = ('лоб', 'правая щека', 'левая щека')
-RPPG_URGENT = ' При боли в груди, обмороке или сильной одышке срочно обратитесь за медицинской помощью.'
+jitter_reference = 1.04
+shimmer_reference = 3.81
+facial_region_names = {'mouth': 'рот', 'eyes': 'глаза', 'brows': 'брови', 'cheeks': 'щёки'}
+facial_stage_names = {'rest': 'Покой', 'smile': 'Улыбка', 'brows': 'Брови'}
+roi_names = ('лоб', 'правая щека', 'левая щека')
+rppg_urgent = ' При боли в груди, обмороке или сильной одышке срочно обратитесь за медицинской помощью.'
+
+# алиасы для совместимости
+JITTER_REFERENCE = jitter_reference
+SHIMMER_REFERENCE = shimmer_reference
+FACIAL_REGION_NAMES = facial_region_names
+FACIAL_STAGE_NAMES = facial_stage_names
+ROI_NAMES = roi_names
+RPPG_URGENT = rppg_urgent
 
 
 def _num(value, digits=2):
@@ -131,12 +139,11 @@ def _band_text(results):
 
 
 class ReportReveal(QObject):
-    """Animate a dock within its own viewport without moving page controls."""
+    # плавное выдвижение шторки отчета
 
     def __init__(self, container, panel):
         super().__init__(container)
-        # The QObject parent owns this controller. Python back-references to
-        # the owner/dock must not form a cycle that outlives the native widgets.
+        # держим слабую ссылку чтоб сборщик мусора не зависал
         self._container_ref = weakref.ref(container)
         self._panel_ref = weakref.ref(panel)
         self.fraction = 0.0
@@ -304,7 +311,7 @@ class ProtocolPanel(QFrame):
             metrics.append(f"Отсчётов: {results['samples']}")
         source = f"Источник: видеофайл {results['source_file']}" if results.get('source') == 'video' else ''
         self.report = self._compose_report(
-            'TecnoMedNeuro / ОТЧЁТ ОБ ИССЛЕДОВАНИИ ДВИЖЕНИЙ КИСТИ', '\n'.join(metrics),
+            'TechnoMedNeuro / ОТЧЁТ ОБ ИССЛЕДОВАНИИ ДВИЖЕНИЙ КИСТИ', '\n'.join(metrics),
             status, detail, limitation, action, source,
         )
         self.assessment_completed.emit(results)
@@ -348,14 +355,15 @@ def _dominant_region_sentence(results):
         return ''
     name, value = max(regions.items(), key=lambda item: item[1])
     return (
-        f'Наибольшее геометрическое отклонение при улыбке — в области «{FACIAL_REGION_NAMES.get(name, name)}»: '
+        f'Наибольшее геометрическое отклонение при улыбке — в области «{facial_region_names.get(name, name)}»: '
         f'{_pct(value)} от расстояния между внешними уголками глаз.'
     )
 
 
-FACIAL_URGENT_ACTION = (
+facial_urgent_action = (
     'При внезапной асимметрии лица, слабости руки или нарушении речи немедленно звоните 103 — не ждите повторного теста.'
 )
+FACIAL_URGENT_ACTION = facial_urgent_action
 
 
 def facial_protocol_text(results):
@@ -430,18 +438,18 @@ class FacialProtocolPanel(ProtocolPanel):
         for stage in ('rest', 'smile', 'brows'):
             trial = results[stage]
             metrics.append(
-                f"{FACIAL_STAGE_NAMES[stage]}: {trial['samples']} принятых кадров, {_num(trial['rate'], 1)}/с, "
+                f"{facial_stage_names[stage]}: {trial['samples']} принятых кадров, {_num(trial['rate'], 1)}/с, "
                 f"расстояние между внешними уголками глаз {_num(trial['width_px'], 1)} пикс."
             )
         source = f"Источник: видеофайл {results['source_file']}" if results.get('source') == 'video' else ''
         self.report = self._compose_report(
-            'TecnoMedNeuro / ОТЧЁТ ОБ ИССЛЕДОВАНИИ СИММЕТРИИ ЛИЦА', '\n'.join(metrics),
+            'TechnoMedNeuro / ОТЧЁТ ОБ ИССЛЕДОВАНИИ СИММЕТРИИ ЛИЦА', '\n'.join(metrics),
             status, detail, limitation, action, source,
         )
         self.assessment_completed.emit(results)
 
 
-WARNING_TRANSLATIONS = {
+warning_translations = {
     'Slow head-position drift was observed. Estimate accepted only after pulse consistency and motion-artifact checks; confirm with a reference sensor.':
         'Наблюдалось медленное смещение головы. Оценка принята после проверки согласованности сигнала и артефактов движения; подтвердите её эталонным датчиком.',
     'Brief pose or tracking outliers were observed; treat the estimate cautiously.':
@@ -453,6 +461,7 @@ WARNING_TRANSLATIONS = {
     'Pitch is near the 75-500 Hz analysis limits; interpretation is limited.':
         'Высота голоса близка к границам анализа 75–500 Гц; интерпретация ограничена.',
 }
+WARNING_TRANSLATIONS = warning_translations
 
 
 def rppg_protocol_text(results):
@@ -504,9 +513,9 @@ def rppg_protocol_text(results):
             'Частота могла повыситься из-за нагрузки, волнения, кофеина или жары; камерная оценка не определяет причину.'
         )
         action = 'Отдохните 5–10 минут и повторите измерение при ровном свете; сравните с прямым измерением пульса и укажите недавнюю нагрузку.'
-    action += RPPG_URGENT
+    action += rppg_urgent
     raw_warnings = results.get('warnings', [])
-    warnings_ru = [WARNING_TRANSLATIONS.get(w, w) for w in raw_warnings]
+    warnings_ru = [warning_translations.get(w, w) for w in raw_warnings]
     limitation = _join(
         f'Покрытие {_pct(coverage, 0)}; концентрация спектра {_pct(concentration)}. '
         f'Разброс всех ROI: {_num(spread, 1)} уд/мин (учитываются все три участка, включая исключённые движком).',
@@ -529,7 +538,7 @@ class RPPGProtocolPanel(ProtocolPanel):
     def set_results(self, results):
         status, detail, action, limitation = rppg_protocol_text(results)
         self._show_text(status, detail, action, limitation)
-        used = ', '.join(ROI_NAMES[i] for i in results.get('used_rois', []))
+        used = ', '.join(roi_names[i] for i in results.get('used_rois', []))
         metrics = [
             f"Источник: видеофайл {results['source_file']}" if results.get('source') == 'video' else '',
             f"Предварительная оценка пульса: {_num(results['bpm'], 1)} уд/мин",
@@ -541,7 +550,7 @@ class RPPGProtocolPanel(ProtocolPanel):
             f"Наибольший пропуск: {_num(results['max_gap'], 3)} с; разрешение спектра: {_num(results['resolution_bpm'], 1)} уд/мин",
         ]
         self.report = self._compose_report(
-            'TecnoMedNeuro / ОТЧЁТ ОБ ИССЛЕДОВАНИИ ПУЛЬСА rPPG', '\n'.join(line for line in metrics if line),
+            'TechnoMedNeuro / ОТЧЁТ ОБ ИССЛЕДОВАНИИ ПУЛЬСА rPPG', '\n'.join(line for line in metrics if line),
             status, detail, limitation, action,
         )
         self.assessment_completed.emit(results)
@@ -553,8 +562,8 @@ def voice_protocol_text(results):
     shimmer = results['shimmer_local']
     hnr = results['hnr']
     voiced = results['voiced_fraction'] * 100
-    jitter_high = jitter > JITTER_REFERENCE
-    shimmer_high = shimmer > SHIMMER_REFERENCE
+    jitter_high = jitter > jitter_reference
+    shimmer_high = shimmer > shimmer_reference
     if jitter_high and shimmer_high:
         status = '[ПРЕВЫШЕН ОРИЕНТИР] ПОВЫШЕНЫ ДЖИТТЕР И ШИММЕР'
         pattern = 'Превышены оба ориентира: периоды голоса колеблются и по длительности, и по амплитуде сильнее эталонных значений.'
@@ -585,8 +594,8 @@ def voice_protocol_text(results):
     detail = _join(
         pattern,
         f'Основной тон (медиана F0) — {_num(f0, 1)} Гц.',
-        f'Локальный джиттер (колебание длительности периодов) — {_pct(jitter, 2)}; ориентир {_num(JITTER_REFERENCE, 2)}%: {jitter_word}.',
-        f'Локальный шиммер (колебание амплитуды периодов) — {_pct(shimmer, 2)}; ориентир {_num(SHIMMER_REFERENCE, 2)}%: {shimmer_word}.',
+        f'Локальный джиттер (колебание длительности периодов) — {_pct(jitter, 2)}; ориентир {_num(jitter_reference, 2)}%: {jitter_word}.',
+        f'Локальный шиммер (колебание амплитуды периодов) — {_pct(shimmer, 2)}; ориентир {_num(shimmer_reference, 2)}%: {shimmer_word}.',
         f'Гармоничность (HNR) — {_num(hnr, 1)} дБ: чем выше значение, тем больше периодической составляющей и меньше шума в звуке.',
         f'Периодические участки найдены в {_pct(voiced, 0)} кадров.',
         'Ориентиры MDVP относятся к классической методике Praat и зависят от микрофона и условий записи; '
@@ -597,7 +606,7 @@ def voice_protocol_text(results):
         f"{results['sample_rate']} Гц; уровень записи {_num(results['level_dbfs'], 1)} дБFS; "
         f"пересвеченных отсчётов {_pct(results['clipping'] * 100, 3)}.",
         'Для HNR здесь нет универсального клинического порога.',
-        ' '.join(WARNING_TRANSLATIONS.get(w, w) for w in results.get('warnings', [])),
+        ' '.join(warning_translations.get(w, w) for w in results.get('warnings', [])),
     )
     return status, detail, action, limitation
 
@@ -638,7 +647,7 @@ class VoiceProtocolPanel(ProtocolPanel):
         else:
             metrics += '\nИсточник: запись с микрофона'
         self.report = '\n\n'.join([
-            'TecnoMedNeuro / ОТЧЁТ ОБ АКУСТИЧЕСКОМ ИССЛЕДОВАНИИ ГОЛОСА',
+            'TechnoMedNeuro / ОТЧЁТ ОБ АКУСТИЧЕСКОМ ИССЛЕДОВАНИИ ГОЛОСА',
             f'Дата и время записи: {_timestamp()}',
             metrics,
             'Алгоритмы: Praat через Parselmouth (высота тона, периоды, вариации, гармоничность); librosa YIN, STFT, MFCC.',

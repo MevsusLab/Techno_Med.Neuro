@@ -1,13 +1,15 @@
-"""Russian measurement interpretation and exports for finger tapping."""
+# формирование протокола оценки моторики
 
 from motor_engine import motor_band
 from protocol_panel import ProtocolPanel, _num, _pct
 
 
-MOTOR_DISCLAIMER = (
+# дисклеймер
+motor_disclaimer = (
     'ДИСКЛЕЙМЕР: Программный расчет на базе компьютерного зрения. Не является медицинским диагнозом '
     'и не заменяет очный осмотр невролога по шкале UPDRS.'
 )
+MOTOR_DISCLAIMER = motor_disclaimer
 
 
 def motor_protocol_text(results):
@@ -70,7 +72,7 @@ class MotorProtocolPanel(ProtocolPanel):
 
     def set_results(self, results):
         title, analysis, action, quality = motor_protocol_text(results)
-        self._show_text(title, analysis, action, quality + '\n\n' + MOTOR_DISCLAIMER)
+        self._show_text(title, analysis, action, quality + '\n\n' + motor_disclaimer)
         hand = {'Left': 'левая', 'Right': 'правая'}.get(results['hand'], results['hand'])
         metrics = '\n'.join([
             f'Рука (метка трекера): {hand}',
@@ -85,7 +87,7 @@ class MotorProtocolPanel(ProtocolPanel):
         source = ('Источник: видеофайл ' + results['source_file'] if results.get('source') == 'video'
                   else 'Источник: веб-камера')
         self.report = self._compose_report(
-            'TecnoMedNeuro / МОТОРИКА ПАЛЬЦЕВ / ТЕСТ UPDRS 3.4', metrics,
-            title, analysis, quality + '\n\n' + MOTOR_DISCLAIMER, action, source,
+            'TechnoMedNeuro / МОТОРИКА ПАЛЬЦЕВ / ТЕСТ UPDRS 3.4', metrics,
+            title, analysis, quality + '\n\n' + motor_disclaimer, action, source,
         )
         self.assessment_completed.emit(results)

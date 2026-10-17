@@ -14,22 +14,27 @@ from capture_worker import ProcessCaptureWorker
 from facial_engine import normalize_face, PAIRS
 
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), 'models', 'face_landmarker.task')
-MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'
+model_path = os.path.join(os.path.dirname(__file__), 'models', 'face_landmarker.task')
+model_url = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'
+
+# алиасы для совместимости
+MODEL_PATH = model_path
+MODEL_URL = model_url
 
 
 def ensure_face_model(cancelled):
+    # загрузка нейросетевой модели лица
     if cancelled():
         raise InterruptedError('Face model setup cancelled')
-    if os.path.isfile(MODEL_PATH):
+    if os.path.isfile(model_path):
         return
-    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
     temporary = None
     try:
-        with tempfile.NamedTemporaryFile(dir=os.path.dirname(MODEL_PATH), suffix='.part', delete=False) as output:
+        with tempfile.NamedTemporaryFile(dir=os.path.dirname(model_path), suffix='.part', delete=False) as output:
             temporary = output.name
             started = time.perf_counter()
-            with urllib.request.urlopen(MODEL_URL, timeout=10) as response:
+            with urllib.request.urlopen(model_url, timeout=10) as response:
                 expected = int(response.headers.get('Content-Length', 0))
                 while True:
                     if cancelled():
@@ -42,10 +47,10 @@ def ensure_face_model(cancelled):
                     output.write(data)
                 if output.tell() == 0 or (expected and output.tell() != expected):
                     raise OSError('Face model download is incomplete')
-        if not os.path.exists(MODEL_PATH):
+        if not os.path.exists(model_path):
             if cancelled():
                 raise InterruptedError('Face model setup cancelled')
-            os.rename(temporary, MODEL_PATH)
+            os.rename(temporary, model_path)
             temporary = None
     finally:
         if temporary and os.path.exists(temporary):
@@ -94,7 +99,7 @@ class FaceSession(QThread):
                 return
             self.phase_change('model initialization')
             model = FaceLandmarker.create_from_options(FaceLandmarkerOptions(
-                base_options=BaseOptions(model_asset_path=MODEL_PATH), running_mode=RunningMode.VIDEO,
+                base_options=BaseOptions(model_asset_path=model_path), running_mode=RunningMode.VIDEO,
                 num_faces=2, min_face_detection_confidence=0.6,
                 output_facial_transformation_matrixes=True,
             ))

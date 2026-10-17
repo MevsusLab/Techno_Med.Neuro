@@ -4,15 +4,19 @@ import sys
 from pathlib import Path
 
 
-VOICE_PACKAGES = {
+voice_packages = {
     'sounddevice': 'sounddevice',
     'librosa': 'librosa',
     'parselmouth': 'praat-parselmouth',
 }
-VOICE_FILE_PACKAGES = {
+voice_file_packages = {
     'librosa': 'librosa',
     'parselmouth': 'praat-parselmouth',
 }
+
+# для совместимости
+VOICE_PACKAGES = voice_packages
+VOICE_FILE_PACKAGES = voice_file_packages
 
 
 def dependency_message(packages, cause=''):
@@ -31,8 +35,9 @@ def dependency_message(packages, cause=''):
 
 
 def check_voice_dependencies():
+    # смотрим установлены ли библиотеки для микрофона
     missing = []
-    for module, package in VOICE_PACKAGES.items():
+    for module, package in voice_packages.items():
         try:
             available = importlib.util.find_spec(module) is not None
         except (ImportError, ValueError):
@@ -53,13 +58,13 @@ def load_voice_dependencies():
         _ = (sounddevice.InputStream, librosa.feature.rms, librosa.yin,
              librosa.resample, librosa.stft, librosa.feature.mfcc, parselmouth.Sound)
     except Exception as exc:
-        raise RuntimeError(dependency_message(VOICE_PACKAGES.values(), f'{type(exc).__name__}: {exc}')) from exc
+        raise RuntimeError(dependency_message(voice_packages.values(), f'{type(exc).__name__}: {exc}')) from exc
 
 
 def check_voice_file_dependencies():
-    """Check only analysis packages; uploaded media never opens a microphone."""
+    # проверка пакетов для анализа файла
     missing = []
-    for module, package in VOICE_FILE_PACKAGES.items():
+    for module, package in voice_file_packages.items():
         try:
             available = importlib.util.find_spec(module) is not None
         except (ImportError, ValueError):
@@ -71,7 +76,7 @@ def check_voice_file_dependencies():
 
 
 def load_voice_file_dependencies():
-    """Import and resolve lazy feature symbols without loading sounddevice."""
+    # импорт либросы и праата без звуковой карты
     check_voice_file_dependencies()
     try:
         librosa = importlib.import_module('librosa')
@@ -80,5 +85,5 @@ def load_voice_file_dependencies():
         _ = (librosa.feature.rms, librosa.yin, librosa.resample, librosa.stft,
              librosa.feature.mfcc, parselmouth.Sound)
     except Exception as exc:
-        raise RuntimeError(dependency_message(VOICE_FILE_PACKAGES.values(),
+        raise RuntimeError(dependency_message(voice_file_packages.values(),
                                               f'{type(exc).__name__}: {exc}')) from exc

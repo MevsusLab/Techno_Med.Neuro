@@ -47,19 +47,35 @@ from patient_graph import TemporalPatientGraph
 from patient_cards_drawer import PatientCardsDrawer
 
 
-BG = "#FFFFFF"
-BG_ALT = "#F8FAFC"
-NAVY = "#0F172A"
-NAVY_MID = "#1E293B"
-NAVY_DEEP = "#172554"
-BORDER = "#CBD5E1"
-BORDER_LIGHT = "#E2E8F0"
-TEXT = "#0F172A"
-TEXT_DIM = "#475569"
-TEXT_MUTED = "#94A3B8"
-GREEN = "#16A34A"
-AMBER = "#D97706"
-RED = "#DC2626"
+# цветовая палитра интерфейса
+bg = "#FFFFFF"
+bg_alt = "#F8FAFC"
+navy = "#0F172A"
+navy_mid = "#1E293B"
+navy_deep = "#172554"
+border = "#CBD5E1"
+border_light = "#E2E8F0"
+text_color = "#0F172A"
+text_dim = "#475569"
+text_muted = "#94A3B8"
+green = "#16A34A"
+amber = "#D97706"
+red = "#DC2626"
+
+# алиасы для совместимости
+BG = bg
+BG_ALT = bg_alt
+NAVY = navy
+NAVY_MID = navy_mid
+NAVY_DEEP = navy_deep
+BORDER = border
+BORDER_LIGHT = border_light
+TEXT = text_color
+TEXT_DIM = text_dim
+TEXT_MUTED = text_muted
+GREEN = green
+AMBER = amber
+RED = red
 
 def f_sans(size=11, bold=False):
     f = QFont("Segoe UI", size)
@@ -328,7 +344,7 @@ class NavBar(QWidget):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(12, 0, 12, 0)
         lay.setSpacing(0)
-        brand = QLabel("TECNOMEDNEURO")
+        brand = QLabel("TECHNOMEDNEURO")
         brand.setFont(f_sans(10, True))
         brand.setStyleSheet("color: #FFFFFF; border: none; letter-spacing: 2px;")
         lay.addWidget(brand)
@@ -484,7 +500,7 @@ class DashboardPage(QWidget):
         info_grid = QGridLayout()
         info_grid.setSpacing(4)
         for r, (k, v) in enumerate([
-            ("Система", "TecnoMedNeuro Screening Suite"),
+            ("Система", "TechnoMedNeuro Screening Suite"),
             ("Версия", "0.1.0-alpha"),
             ("Бэкенд", "MediaPipe + SciPy DSP"),
             ("Ввод", "USB-вебкамера + микрофон"),
@@ -2209,9 +2225,9 @@ class DwellButton(QPushButton):
         self.update()
 
 
-AAC_WORDS_PER_SHEET = 4
-AAC_GRID_COLUMNS = 2
-AAC_CATEGORIES = [
+aac_words_per_sheet = 4
+aac_grid_columns = 2
+aac_categories = [
     ('ЭКСТРЕННАЯ ПОМОЩЬ / ПОТРЕБНОСТИ', ['ПОМОЩЬ', 'ВОДА', 'БОЛЬ', 'ТУАЛЕТ']),
     ('ОТВЕТЫ / ПОНИМАНИЕ', ['ДА', 'НЕТ', 'НЕ ПОНИМАЮ', 'ХОРОШО']),
     ('ПОЛОЖЕНИЕ / ТЕМПЕРАТУРА', ['ПЕРЕВЕРНУТЬ', 'ПОДНЯТЬ ГОЛОВУ', 'ХОЛОДНО', 'ЖАРКО']),
@@ -2220,9 +2236,14 @@ AAC_CATEGORIES = [
     ('ОБЩЕНИЕ / БЛИЗКИЕ', ['СПАСИБО', 'ПОЖАЛУЙСТА', 'СЕМЬЯ', 'ТЕЛЕФОН']),
 ]
 
+# для совместимости с тестами
+AAC_WORDS_PER_SHEET = aac_words_per_sheet
+AAC_GRID_COLUMNS = aac_grid_columns
+AAC_CATEGORIES = aac_categories
+
 
 class AACContextLabel(QLabel):
-    """Russian context text must not change the calibrated navigation geometry."""
+    # фиксируем размер метки чтоб не сдвигать верстку
 
     def freeze_size_hint(self):
         self.fixed_hint = super().sizeHint()
@@ -2247,8 +2268,7 @@ class AACPage(QWidget):
         self.closing = False
         self.tracking_stopping = False
         self.tracking_error = ''
-        # Calibration: CAPTURE pass, head-movement step, reverse CHECK pass and,
-        # if a button's windows disagree, one REFINE pass for those buttons.
+        # этапы калибровки: прямой проход, поворот головы, проверка и уточнение
         self.calibration_model = None
         self.calibration_active = False
         self.calibration_stage = 'capture'
@@ -2376,14 +2396,14 @@ class AACPage(QWidget):
         matrix_layout.setContentsMargins(0, 0, 0, 0)
         matrix_layout.setSpacing(6)
         self.card_buttons = []
-        for index in range(AAC_WORDS_PER_SHEET):
+        for index in range(aac_words_per_sheet):
             button = DwellButton('')
             button.setMinimumHeight(100)
             button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             button.clicked.connect(lambda checked=False, i=index: self._select_word(i))
             self.card_buttons.append(button)
-            matrix_layout.addWidget(button, index // AAC_GRID_COLUMNS, index % AAC_GRID_COLUMNS)
-        for column in range(AAC_GRID_COLUMNS):
+            matrix_layout.addWidget(button, index // aac_grid_columns, index % aac_grid_columns)
+        for column in range(aac_grid_columns):
             matrix_layout.setColumnStretch(column, 1)
         matrix_layout.setRowStretch(0, 1)
         matrix_layout.setRowStretch(1, 1)
@@ -2555,7 +2575,7 @@ class AACPage(QWidget):
                 self.calibration_hint = str(exc)
                 self._show_calibration_prompt()
                 return
-            # Long, restless fixation: keep the settled end of it and move on.
+            # берем стабильный хвост фиксации
             samples = best_effort_sample(window, self.calibration_pending_times)
         self._accept_calibration_window(samples)
 
@@ -2576,8 +2596,7 @@ class AACPage(QWidget):
     def _finish_calibration_stage(self):
         count = len(self._calibration_buttons())
         if self.calibration_stage == 'capture':
-            # Use the card closest to the viewport centre; no centre-column
-            # card is required. Target identities stay the same on every sheet.
+            # берем кнопку ближе к центру экрана
             centers = self._target_centers()
             card_indices = range(2, count)
             target = min(card_indices, key=lambda index: np.linalg.norm(centers[index] - [0.5, 0.5]))
@@ -2651,8 +2670,7 @@ class AACPage(QWidget):
                        or sample['timestamp'] > self.last_gaze_timestamp)]
             if (samples and not self.calibration_active
                     and samples[-1]['timestamp'] - samples[0]['timestamp'] > MAX_GAZE_GAP_SECONDS):
-                # A stalled GUI can receive seconds of buffered fixations.
-                # Only recent observations may select a word on its return.
+                # отбрасываем старые фиксации если интерфейс лагал
                 self._lose_gaze()
                 cutoff = samples[-1]['timestamp'] - DWELL_GRACE_SECONDS
                 samples = [sample for sample in samples if sample['timestamp'] >= cutoff]
@@ -2660,8 +2678,7 @@ class AACPage(QWidget):
                 self.last_sample_arrival = now
             for sample in samples:
                 self._process_sample(sample)
-            # Child and GUI clocks are never compared; a stall is judged by
-            # arrival time so no stale gaze can complete a dwell.
+            # задержку смотрим по времени прихода данных чтоб не залипало
             if self.last_sample_arrival is not None and now - self.last_sample_arrival > 0.5:
                 self.last_sample_arrival = None
                 self._lose_gaze()
@@ -2722,8 +2739,7 @@ class AACPage(QWidget):
         index = None if features is None else self.calibration_model.classify(features, current)
         point = None
         if index is not None and buttons[index] in rectangles:
-            # A classified gaze targets the centre of its existing button, so
-            # the 12 px entry inset and border retention are always satisfied.
+            # целимся в центр кнопки с запасом
             point = self._target_centers()[index] * [self.width(), self.height()]
         update = self.dwell_engine.update(point, rectangles, timestamp, missing=features is None)
         self.current_target = self.dwell_engine.target
@@ -2758,16 +2774,14 @@ class AACPage(QWidget):
 
     def _change_category(self, delta):
         index = (self.category_index if self.is_predictive and delta < 0
-                 else (self.category_index + delta) % len(AAC_CATEGORIES))
+                 else (self.category_index + delta) % len(aac_categories))
         self._set_category(index)
         if self.calibration_active:
             self._restart_calibration_window()
             self._highlight_calibration_target(0.0)
             self._show_calibration_prompt()
         else:
-            # Manual navigation and gaze arrows both lock out selection after
-            # relabeling. Use the sample clock, just like DwellEngine, and never
-            # shorten the cooldown already started by a gaze-triggered arrow.
+            # блокируем выбор сразу после перелистывания карточки
             self._context_cooldown()
 
     def _context_cooldown(self):
@@ -2784,9 +2798,9 @@ class AACPage(QWidget):
         self.is_predictive = False
         self.predictive_context = None
         self.previous_button.setText('< ПРЕДЫДУЩАЯ КАТЕГОРИЯ')
-        self.category_index = index % len(AAC_CATEGORIES)
-        category, words = AAC_CATEGORIES[self.category_index]
-        self.category_label.setText(f'КАТЕГОРИЯ [{self.category_index + 1} / {len(AAC_CATEGORIES)}]: {category}')
+        self.category_index = index % len(aac_categories)
+        category, words = aac_categories[self.category_index]
+        self.category_label.setText(f'КАТЕГОРИЯ [{self.category_index + 1} / {len(aac_categories)}]: {category}')
         for button, word in zip(self.card_buttons, words):
             button.setText(word)
         for button in self._calibration_buttons():
@@ -2944,8 +2958,7 @@ class AACPage(QWidget):
         super().resizeEvent(event)
         if hasattr(self, 'dwell_engine'):
             self._reset_dwell()
-        # Calibration data is stored per button, not per pixel position, so a
-        # layout change only restarts the window currently being measured.
+        # калибровка идет по кнопкам а не пикселям экрана
         if getattr(self, 'calibration_active', False):
             self._restart_calibration_window()
             self._highlight_calibration_target(0.0)
@@ -3249,7 +3262,7 @@ class VoicePage(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self, patient_graph=None):
         super().__init__()
-        self.setWindowTitle("TecnoMedNeuro — Интеллектуальная система цифровой нейродиагностики и мониторинговых модулей")
+        self.setWindowTitle("TechnoMedNeuro — Интеллектуальная система цифровой нейродиагностики и мониторинговых модулей")
         self.setMinimumSize(1200, 750)
         self.resize(1400, 860)
         self.setStyleSheet(f"QMainWindow {{ background: {BG}; }} * {{ border-radius: 0px; }}")

@@ -1,4 +1,4 @@
-"""Slide-out patient cards drawer with password protection and graph visualizations."""
+# боковая шторка карточек пацыентов и визуализация графа
 
 import math
 from PyQt6.QtCore import Qt, QRect, QPropertyAnimation, QEasingCurve, pyqtSignal

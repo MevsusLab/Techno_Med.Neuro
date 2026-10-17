@@ -1,11 +1,4 @@
-"""Temporal patient knowledge graph with session chains and clinical twin matching.
-
-Stores longitudinal session data as a directed graph:
-  PATIENT -> SESSION -> (BIOMARKER, SYNDROME)
-  SESSION_prev -> SESSION_curr  (with delta metrics and trend)
-
-Persistence via nx.node_link_data / nx.node_link_graph to JSON.
-"""
+# граф связей истории пацыента и сессий
 
 import hashlib
 import json
@@ -21,9 +14,13 @@ import networkx as nx
 from session_diagnostics import BIOMARKERS, HYPOTHESES, build_synthesis
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-DEFAULT_STORAGE_PATH = str(PROJECT_ROOT / "patient_history_graph.json")
+project_root = Path(__file__).resolve().parent
+default_storage_path = str(project_root / "patient_history_graph.json")
 _DEFAULT_PATH = object()
+
+# алиасы для совместимости
+PROJECT_ROOT = project_root
+DEFAULT_STORAGE_PATH = default_storage_path
 
 
 _REFERENCE_PROFILES = [
@@ -126,7 +123,7 @@ class TemporalPatientGraph:
         if in_memory or path is None:
             self.path = None
         elif path is _DEFAULT_PATH:
-            self.path = DEFAULT_STORAGE_PATH
+            self.path = default_storage_path
         else:
             self.path = str(path)
         self.graph = nx.DiGraph()

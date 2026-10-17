@@ -1,4 +1,4 @@
-"""Light engineering graph and research synthesis panel; no clinical probabilities."""
+# панель поддержки принятия решений и граф онтологии
 
 from html import escape
 import math
@@ -15,11 +15,15 @@ from session_diagnostics import BIOMARKERS, HYPOTHESES, MODULE_NAMES, ontology
 from patient_graph import TemporalPatientGraph
 
 
-CDSS_DISCLAIMER = (
+cdss_disclaimer = (
     'ДИСКЛЕЙМЕР: Мультимодальный графовый анализ является исследовательской системой поддержки '
     'принятия решений (CDSS) и не заменяет комплексную очную диагностику врача-невролога.'
 )
-SCORE_NOTE = 'Индекс поддержки правил, не вероятность диагноза. Веса не прошли клиническую калибровку.'
+score_note = 'Индекс поддержки правил, не вероятность диагноза. Веса не прошли клиническую калибровку.'
+
+# совместимость
+CDSS_DISCLAIMER = cdss_disclaimer
+SCORE_NOTE = score_note
 
 
 def fmt(value):
@@ -29,7 +33,7 @@ def fmt(value):
 
 
 def summary_text(result, patient_label=None, trajectory=None, twins=None):
-    lines = ['TecnoMedNeuro / СВОДНЫЙ МУЛЬТИМОДАЛЬНЫЙ ОТЧЁТ', SCORE_NOTE,
+    lines = ['TechnoMedNeuro / СВОДНЫЙ МУЛЬТИМОДАЛЬНЫЙ ОТЧЁТ', score_note,
              'Состояние: ' + result['status'], '']
     if patient_label:
         lines += [f'Пациент: {patient_label}', '']
@@ -64,7 +68,7 @@ def summary_text(result, patient_label=None, trajectory=None, twins=None):
               'Правило EXCLUDES — отрицательный вклад модели; оно не исключает диагноз клинически.',
               'Дистанционные пробы не подтверждают позу покоя, время появления симптомов или отрицательный FAST.',
               'Не выполнены: ' + (', '.join(result['missing']) or 'все пять модулей выполнены')]
-    lines += result['limited'] + ['', CDSS_DISCLAIMER, '', result['action']]
+    lines += result['limited'] + ['', cdss_disclaimer, '', result['action']]
     return '\n'.join(lines)
 
 
@@ -151,7 +155,7 @@ class KnowledgeGraphView(QGraphicsView):
             title = ' '.join(words[:midpoint]) + '\n' + ' '.join(words[midpoint:])
             badge = f'  {score:.0f}%' if reached else '  —'
             self._node(key, title + badge, QRectF(640, 25 + i * 46, 440, 42), reached, True,
-                       key + '\n' + SCORE_NOTE)
+                       key + '\n' + score_note)
         for source, target, attrs in graph.edges(data=True):
             a, b = self.nodes[source], self.nodes[target]
             enabled = result is not None and attrs.get('active')

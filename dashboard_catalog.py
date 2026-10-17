@@ -1,4 +1,4 @@
-"""Lightweight, vector-only module previews for the dashboard catalog."""
+# карточки модулей для дашборда
 
 import math
 
@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QScrollAr
                             QSizePolicy, QVBoxLayout, QWidget)
 
 
-MODULES = (
+modules_catalog = (
     ('tremor', 'ТРЕМОР', 1, 'Анализ спектра и частоты покоя 1-12 Гц через FFT/PSD'),
     ('facial', 'НЕЙРОМИМИКА', 2, 'Экспресс-скрининг асимметрии лица и пареза по протоколу FAST'),
     ('voice', 'ГОЛОС', 5, 'Акустический анализ устойчивой фонации: F0, Jitter, Shimmer, HNR'),
@@ -16,6 +16,7 @@ MODULES = (
     ('gaze', 'АЙТРЕКИНГ', 4, 'Бесконтактная ассистивная клавиатура по фиксации взгляда (Dwell 900 мс)'),
     ('pulse', 'ПУЛЬС (rPPG)', 3, 'Бесконтактная детекция ЧСС по микропульсациям кожи лица (45-180 BPM)'),
 )
+MODULES = modules_catalog
 
 
 class ModulePreview(QWidget):
@@ -271,7 +272,7 @@ class DashboardCatalog(QScrollArea):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        # Leave room for wrapped text at 1200px without shrinking the previews.
+        # подгоняем высоту под разрешение экрана
         height = 174 if self.viewport().width() < 1250 else 158
         for card in self.cards:
             card.setFixedHeight(height)

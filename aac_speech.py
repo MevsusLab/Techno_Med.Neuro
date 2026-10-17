@@ -1,4 +1,4 @@
-"""Serialized Russian TTS on one daemon thread (including Windows COM calls)."""
+# синтез речи через tts в отдельном потоке
 
 from collections import deque
 import os
@@ -25,7 +25,7 @@ def russian_voice(voices):
 
 def create_engine():
     import pyttsx3
-    # A dedicated Engine avoids pyttsx3.init's global weak cache across threads.
+    # инициализируем движок sapi5
     return pyttsx3.Engine(driverName='sapi5' if os.name == 'nt' else None)
 
 
@@ -127,7 +127,7 @@ class SpeechWorker:
                         engine.endLoop()
                 except Exception:
                     pass
-                # Destroy the native driver before uninitializing this COM apartment.
+                # освобождаем движок до деинициализации com
                 del engine
             if com is not None:
                 com.CoUninitialize()

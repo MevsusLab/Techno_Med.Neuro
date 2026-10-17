@@ -1,12 +1,13 @@
+# пары симметричных точек лица
 import numpy as np
 
-
-PAIRS = {
+pairs = {
     'mouth': [(61, 291), (78, 308)],
     'eyes': [(159, 386), (145, 374), (33, 263)],
     'brows': [(70, 300), (105, 334)],
     'cheeks': [(98, 327), (205, 425)],
 }
+PAIRS = pairs
 
 
 def normalize_face(landmarks, pose):
@@ -44,9 +45,9 @@ def normalize_face(landmarks, pose):
     if np.any(side[[61, 33]] >= 0) or np.any(side[[291, 263]] <= 0):
         raise ValueError('Face orientation or landmark ordering is unreliable.')
     regions = {}
-    for region, pairs in PAIRS.items():
+    for region, pair_list in pairs.items():
         errors = []
-        for right, left in pairs:
+        for right, left in pair_list:
             errors.append(100 * np.hypot(abs(side[right]) - abs(side[left]), along_axis[right] - along_axis[left]))
         regions[region] = float(np.median(errors))
     eye_widths = (np.linalg.norm(aligned[33] - aligned[133]), np.linalg.norm(aligned[263] - aligned[362]))
@@ -90,7 +91,7 @@ def analyze_stage(samples, start, end):
     if np.std([value['width_px'] for value in analyses]) / np.median([value['width_px'] for value in analyses]) > 0.08:
         raise ValueError('Camera distance or head pose changed during capture.')
     return {
-        'regions': {key: float(np.median([item['regions'][key] for item in analyses])) for key in PAIRS},
+        'regions': {key: float(np.median([item['regions'][key] for item in analyses])) for key in pairs},
         'aggregate': float(np.median([item['aggregate'] for item in analyses])),
         'points': np.median([item['points'] for item in analyses], axis=0),
         'mouth': tuple(np.median([item['mouth'] for item in analyses], axis=0)),

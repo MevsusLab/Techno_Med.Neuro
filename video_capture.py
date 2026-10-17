@@ -1,9 +1,4 @@
-"""Isolated video-file sources for the camera-based research modules.
-
-All file decoding and MediaPipe inference run in the existing supervised child
-process. Packets use ProcessCaptureWorker's established latest-frame / scalar
-sample contract, so the existing module analysis and quality gates are reused.
-"""
+# обработка и декодирование видеофайлов для тестов
 
 from pathlib import Path
 import os
@@ -26,19 +21,27 @@ from rppg_capture import extract_regions
 from voice_dependencies import load_voice_file_dependencies
 
 
-VIDEO_EXTENSIONS = {'.mp4', '.mov', '.m4v', '.avi', '.mkv', '.wmv', '.webm'}
-MAX_VIDEO_BYTES = 500 * 1024 * 1024
-MAX_VIDEO_SECONDS = 600.0
-PREVIEW_WIDTH = 320
-VIDEO_FILTER = 'Видеофайлы (*.mp4 *.mov *.m4v *.avi *.mkv *.wmv *.webm);;Все файлы (*.*)'
-RECORDING_SECONDS = {'tremor': 15.0, 'facial': 15.0, 'rppg': 30.0}
+video_extensions = {'.mp4', '.mov', '.m4v', '.avi', '.mkv', '.wmv', '.webm'}
+max_video_bytes = 500 * 1024 * 1024
+max_video_seconds = 600.0
+preview_width = 320
+video_filter = 'Видеофайлы (*.mp4 *.mov *.m4v *.avi *.mkv *.wmv *.webm);;Все файлы (*.*)'
+recording_seconds = {'tremor': 15.0, 'facial': 15.0, 'rppg': 30.0}
+
+# алиасы для совместимости
+VIDEO_EXTENSIONS = video_extensions
+MAX_VIDEO_BYTES = max_video_bytes
+MAX_VIDEO_SECONDS = max_video_seconds
+PREVIEW_WIDTH = preview_width
+VIDEO_FILTER = video_filter
+RECORDING_SECONDS = recording_seconds
 
 
 def validate_video(path, mode):
     path = Path(path).expanduser().resolve()
-    if not path.is_file() or path.suffix.lower() not in VIDEO_EXTENSIONS:
+    if not path.is_file() or path.suffix.lower() not in video_extensions:
         raise ValueError('Выберите видеофайл MP4, MOV, M4V, AVI, MKV, WMV или WEBM.')
-    if path.stat().st_size <= 0 or path.stat().st_size > MAX_VIDEO_BYTES:
+    if path.stat().st_size <= 0 or path.stat().st_size > max_video_bytes:
         raise ValueError('Видео пустое или больше допустимого размера 500 МБ.')
     capture = cv2.VideoCapture(str(path))
     try:
@@ -51,12 +54,11 @@ def validate_video(path, mode):
         capture.release()
     if not np.isfinite([fps, frames, duration]).all() or fps <= 0 or frames <= 0:
         raise ValueError('В метаданных видео отсутствует частота кадров или длительность.')
-    # Tremor requires >10s of sampled trajectory; leave room for the final
-    # frame being one source interval before a nominal 10s container duration.
+    # для тремора нужно больше 10 сек записи
     minimum = {'tremor': 10.5, 'facial': 15.0, 'rppg': 20.0, 'voice': 5.0, 'motor': 10.0}[mode]
     if duration < minimum:
         raise ValueError(f'Видео длится {duration:.1f} с; для этого анализа требуется не менее {minimum:g} с.')
-    if duration > MAX_VIDEO_SECONDS:
+    if duration > max_video_seconds:
         raise ValueError('Длительность видео превышает ограничение 10 минут.')
     min_rate = 25.0 if mode in ('tremor', 'motor') else 15.0
     if fps < min_rate:
@@ -65,7 +67,7 @@ def validate_video(path, mode):
 
 
 def check_video_audio_dependency():
-    """Confirm the bundled FFmpeg executable is available before starting UI work."""
+    # поиск утилиты ffmpeg для извлечения звука
     external = shutil.which('ffmpeg')
     try:
         import imageio_ffmpeg
@@ -83,14 +85,14 @@ def check_video_audio_dependency():
 
 def _preview(rgb):
     height, width = rgb.shape[:2]
-    if width > PREVIEW_WIDTH:
-        rgb = cv2.resize(rgb, (PREVIEW_WIDTH, max(1, round(height * PREVIEW_WIDTH / width))),
+    if width > preview_width:
+        rgb = cv2.resize(rgb, (preview_width, max(1, round(height * preview_width / width))),
                          interpolation=cv2.INTER_AREA)
     return np.ascontiguousarray(rgb)
 
 
 def source_timestamp(position_ms, frame_index, frame_period, previous=-1.0):
-    """Use container PTS when monotonic; fall back to frame-rate timing if not."""
+    # таймштамп по pts или расчетный
     candidate = float(position_ms) / 1000
     fallback = frame_index * frame_period
     timestamp = (candidate if np.isfinite(candidate) and candidate > previous + frame_period * 0.5
@@ -259,7 +261,7 @@ def _run_video_capture(connection, stop, path, mode):
             reason = 'stopped'
         elif mode == 'facial':
             reason = 'deadline'
-            # Publish fixed protocol-stage bounds for FacialPage._finished.
+            # границы фаз мимики
             latest = {'image': last_preview if last_preview is not None else np.zeros((1, 1, 3), dtype=np.uint8), 'message': 'Видео обработано.',
                       'stage': 'complete', 'progress': 1.0, 'stage_bounds': facial_bounds,
                       'counts': facial_counts, 'rejected': facial_rejected}
@@ -290,11 +292,11 @@ def _extract_voice(connection, stop, path):
         return None
     source, _, _, duration = validate_video(path, 'voice')
     ffmpeg = check_video_audio_dependency()
-    with tempfile.TemporaryDirectory(prefix='tecnomed_video_audio_') as directory:
+    with tempfile.TemporaryDirectory(prefix='technomed_video_audio_') as directory:
         output = Path(directory) / 'video_audio.wav'
         command = [ffmpeg, '-nostdin', '-v', 'error', '-threads', '1', '-filter_threads', '1',
                    '-i', str(source), '-vn', '-ac', '1',
-                   '-ar', '16000', '-t', str(MAX_VIDEO_SECONDS), '-f', 'wav', '-y', str(output)]
+                   '-ar', '16000', '-t', str(max_video_seconds), '-f', 'wav', '-y', str(output)]
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                    stderr=subprocess.DEVNULL,
                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
@@ -315,8 +317,7 @@ def _extract_voice(connection, stop, path):
                 raise ValueError('Не удалось извлечь аудиодорожку из видео. Проверьте кодек и наличие звука.')
             if not output.is_file() or output.stat().st_size <= 44:
                 raise ValueError('В видеофайле не найдена аудиодорожка.')
-            # Decode/extract first: loading librosa/Praat can reserve substantial
-            # memory, while FFmpeg also needs working memory for video codecs.
+            # сперва извлекаем аудиодорожку, чтобы не забить память
             _voice_status(connection, 'voice dependencies', 'Подготовка библиотек анализа голоса.')
             load_voice_file_dependencies()
             audio, rate, metadata = load_audio_file(output)
@@ -362,10 +363,10 @@ def _video_process(connection, stop, duration, preparation, path, mode):
 
 
 class VideoCaptureWorker(ProcessCaptureWorker):
-    """Video file source supervised exactly like the existing live captures."""
+    # воркер видеофайла через отдельный процесс
 
     def __init__(self, path, mode, parent=None):
         if mode not in {'tremor', 'facial', 'rppg', 'voice'}:
             raise ValueError(f'Unknown video analysis mode: {mode}')
-        super().__init__(duration=MAX_VIDEO_SECONDS, parent=parent,
+        super().__init__(duration=max_video_seconds, parent=parent,
                          process_target=_video_process, process_args=(str(path), mode))

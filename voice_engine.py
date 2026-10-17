@@ -2,8 +2,12 @@ import numpy as np
 import os
 
 
-PITCH_FLOOR = 75.0
-PITCH_CEILING = 500.0
+# границы частоты основного тона
+pitch_floor = 75.0
+pitch_ceiling = 500.0
+
+PITCH_FLOOR = pitch_floor
+PITCH_CEILING = pitch_ceiling
 
 
 def load_audio_file(path):
@@ -75,7 +79,7 @@ def analyze_voice(audio, sample_rate):
     trim = int(0.3 * sample_rate)
     signal = y[trim:-trim]
     sound = parselmouth.Sound(signal, sampling_frequency=sample_rate)
-    pitch = sound.to_pitch_ac(time_step=0.01, pitch_floor=PITCH_FLOOR, pitch_ceiling=PITCH_CEILING)
+    pitch = sound.to_pitch_ac(time_step=0.01, pitch_floor=pitch_floor, pitch_ceiling=pitch_ceiling)
     frequencies = pitch.selected_array['frequency']
     voiced = frequencies > 0
     voiced_fraction = float(np.mean(voiced))
@@ -83,16 +87,16 @@ def analyze_voice(audio, sample_rate):
         raise ValueError(f'Only {voiced_fraction * 100:.0f}% of frames have usable periodic voicing. Repeat a continuous vowel; irregular voices may be unmeasurable by this method.')
     f0 = float(np.median(frequencies[voiced]))
     acoustic = librosa.resample(signal, orig_sr=sample_rate, target_sr=16000)
-    yin = librosa.yin(acoustic, fmin=PITCH_FLOOR, fmax=PITCH_CEILING, sr=16000, frame_length=1024, hop_length=160)
+    yin = librosa.yin(acoustic, fmin=pitch_floor, fmax=pitch_ceiling, sr=16000, frame_length=1024, hop_length=160)
     if abs(np.median(yin) / f0 - 1) > 0.15:
         raise ValueError('Pitch estimators disagree; possible octave error, noise, or irregular phonation. No stable metric set can be reported.')
-    pulse = call(sound, 'To PointProcess (periodic, cc)', PITCH_FLOOR, PITCH_CEILING)
-    shortest, longest = 0.8 / PITCH_CEILING, 1.25 / PITCH_FLOOR
+    pulse = call(sound, 'To PointProcess (periodic, cc)', pitch_floor, pitch_ceiling)
+    shortest, longest = 0.8 / pitch_ceiling, 1.25 / pitch_floor
     jitter = float(call(pulse, 'Get jitter (local)', 0, 0, shortest, longest, 1.3) * 100)
     rap = float(call(pulse, 'Get jitter (rap)', 0, 0, shortest, longest, 1.3) * 100)
     shimmer = float(call([sound, pulse], 'Get shimmer (local)', 0, 0, shortest, longest, 1.3, 1.6) * 100)
     apq5 = float(call([sound, pulse], 'Get shimmer (apq5)', 0, 0, shortest, longest, 1.3, 1.6) * 100)
-    harmonicity = sound.to_harmonicity_ac(time_step=0.01, minimum_pitch=PITCH_FLOOR, silence_threshold=0.1, periods_per_window=4.5)
+    harmonicity = sound.to_harmonicity_ac(time_step=0.01, minimum_pitch=pitch_floor, silence_threshold=0.1, periods_per_window=4.5)
     harmonic_values = harmonicity.values.ravel()
     harmonic_values = harmonic_values[np.isfinite(harmonic_values) & (harmonic_values > -199)]
     hnr = float(np.mean(harmonic_values)) if len(harmonic_values) else float('nan')
@@ -106,7 +110,7 @@ def analyze_voice(audio, sample_rate):
         warnings.append('High recording level; keep microphone distance and gain consistent.')
     if voiced_fraction < 0.95:
         warnings.append('Some analyzed frames are unvoiced; perturbation metrics describe accepted cycles only.')
-    if np.mean(frequencies[voiced] <= PITCH_FLOOR * 1.1) > 0.1 or np.mean(frequencies[voiced] >= PITCH_CEILING * 0.9) > 0.1:
+    if np.mean(frequencies[voiced] <= pitch_floor * 1.1) > 0.1 or np.mean(frequencies[voiced] >= pitch_ceiling * 0.9) > 0.1:
         warnings.append('Pitch is near the 75-500 Hz analysis limits; interpretation is limited.')
     return {
         'f0': f0, 'jitter_local': jitter, 'jitter_rap': rap, 'shimmer_local': shimmer,

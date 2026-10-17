@@ -1,9 +1,4 @@
-"""Directed weighted phrase-transition graph for AAC predictive navigation.
-
-Given a selected word, returns the most likely follow-up words ranked by
-edge weight. The graph is built from hand-authored clinical care chains
-covering all 24 AAC vocabulary words.
-"""
+# граф подсказок слов для карточек
 
 _ALL_WORDS = [
     'ПОМОЩЬ', 'ВОДА', 'БОЛЬ', 'ТУАЛЕТ',
@@ -14,7 +9,8 @@ _ALL_WORDS = [
     'СПАСИБО', 'ПОЖАЛУЙСТА', 'СЕМЬЯ', 'ТЕЛЕФОН',
 ]
 
-ROOT_WORDS = ['ПОМОЩЬ', 'ВОДА', 'БОЛЬ', 'ДА', 'НЕТ', 'ТУАЛЕТ']
+root_words = ['ПОМОЩЬ', 'ВОДА', 'БОЛЬ', 'ДА', 'НЕТ', 'ТУАЛЕТ']
+ROOT_WORDS = root_words
 
 _EDGES = {
     'ПОМОЩЬ': [
@@ -155,9 +151,9 @@ class PhraseGraph:
             raise ValueError('Prediction count must be a nonnegative integer')
         if n == 0:
             return []
-        # Graph topology is static: sort once, then use a tiny adjacency lookup.
+        # ищем подходящие следущие слова
         candidates = []
-        for target in [edge[0] for edge in self.adjacency.get(word, ())] + ROOT_WORDS:
+        for target in [edge[0] for edge in self.adjacency.get(word, ())] + root_words:
             if target != word and target in self.adjacency and target not in candidates:
                 candidates.append(target)
                 if len(candidates) == n:

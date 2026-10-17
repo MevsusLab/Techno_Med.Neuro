@@ -1,4 +1,4 @@
-"""Latest-frame camera and inference threads inside the shared capture supervisor."""
+# захват видео и распознавание взгляда через mediapipe
 
 from collections import deque
 import os
@@ -17,12 +17,11 @@ from face_capture import MODEL_PATH, ensure_face_model
 from gaze_engine import GazeSignalFilter, gaze_features, tracking_features
 
 
-PREVIEW_WIDTH = 320
+preview_width = 320
+PREVIEW_WIDTH = preview_width
 
 
 class GazeDetector:
-    """Prefer refined Solutions FaceMesh; support the project's newer Tasks API."""
-
     def __init__(self, cancelled):
         solutions = getattr(mp, 'solutions', None)
         self.is_solutions = solutions is not None and hasattr(solutions, 'face_mesh')
@@ -62,7 +61,7 @@ class GazeDetector:
 
 
 class CameraFrames:
-    """The camera-owning thread never waits for inference or preview rendering."""
+    # отдельный поток для камеры без задержек на нейросеть
 
     def __init__(self):
         self.condition = threading.Condition()
@@ -203,8 +202,6 @@ class GazeSession(QThread):
                 message = 'Держите лицо в кадре и смотрите на экран.'
                 if points is not None:
                     h, w = rgb.shape[:2]
-                    # Pixel coordinates keep x/y proportions (eye openness,
-                    # roll correction) independent of the frame aspect ratio.
                     pixels = points[:, :2] * [w, h]
                     try:
                         ratios = gaze_features(pixels)
@@ -225,15 +222,15 @@ class GazeSession(QThread):
                 sample = {'gaze': gaze, 'features': features, 'raw_features': raw_features,
                           'message': message, 'timestamp': acquired}
                 h, w = rgb.shape[:2]
-                # The preview label is small; a 320 px frame cuts pipe traffic ~4x.
-                preview = cv2.resize(rgb, (PREVIEW_WIDTH, max(1, round(h * PREVIEW_WIDTH / w))),
-                                     interpolation=cv2.INTER_AREA) if w > PREVIEW_WIDTH else rgb
+                # уменьшаем размер превью
+                preview = cv2.resize(rgb, (preview_width, max(1, round(h * preview_width / w))),
+                                     interpolation=cv2.INTER_AREA) if w > preview_width else rgb
                 with self.lock:
                     self.latest = {'image': np.ascontiguousarray(preview), **sample,
                                    'fps': ((len(frame_times) - 1) / max(frame_times[-1] - frame_times[0], 1e-6)
                                            if len(frame_times) > 1 else 0.0)}
                     self.samples.append(sample)
-                    # Bounded transport; a missing interval resets fixation at the receiver.
+                    # буфер последних кадров
                     if len(self.samples) > 180:
                         del self.samples[:-180]
         except InterruptedError:

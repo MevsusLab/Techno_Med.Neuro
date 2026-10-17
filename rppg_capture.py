@@ -13,7 +13,9 @@ from capture_worker import ProcessCaptureWorker
 from face_capture import MODEL_PATH, ensure_face_model, head_pose
 
 
-REGIONS = ((10, 109, 108, 151, 337, 338), (50, 101, 205, 187), (280, 330, 425, 411))
+# участки лица для фотоплетизмографии (лоб, щеки)
+regions = ((10, 109, 108, 151, 337, 338), (50, 101, 205, 187), (280, 330, 425, 411))
+REGIONS = regions
 
 
 def extract_regions(frame, landmarks, pose):
@@ -27,7 +29,7 @@ def extract_regions(frame, landmarks, pose):
     if span < 90:
         raise ValueError('Move closer; skin regions need more pixels.')
     colors, polygons = [], []
-    for indices in REGIONS:
+    for indices in regions:
         polygon = points[list(indices), :2]
         polygon = (polygon.mean(axis=0) + 0.75 * (polygon - polygon.mean(axis=0))).astype(np.int32)
         if np.any(polygon < 4) or np.any(polygon[:, 0] >= w - 4) or np.any(polygon[:, 1] >= h - 4):

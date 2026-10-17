@@ -1,11 +1,10 @@
-"""Finger-tapping kinematics; observation thresholds are not UPDRS scores."""
+# подсчет параметров теппинга пальцев
 
 import numpy as np
 from scipy.signal import find_peaks, savgol_filter
 
 
 def finger_separation(points):
-    """Image-plane tip distance in palm units, using pixel-space landmarks."""
     points = np.asarray(points, dtype=float)
     if points.shape != (21, 2) or not np.isfinite(points).all():
         raise ValueError('Ориентиры кисти отсутствуют или некорректны.')
@@ -19,7 +18,6 @@ def finger_separation(points):
 
 
 def motor_band(results):
-    """Severe flags win; the unspecified 20–35% CV band is borderline."""
     if results['amplitude_decrement'] < -25 or results['tap_frequency'] < 2 or results['rhythm_cv'] > 35:
         return 'marked'
     if (results['amplitude_decrement'] > -15 and results['tap_frequency'] >= 2.8
@@ -69,10 +67,10 @@ def analyze_tapping(samples, record_start, record_end):
     prominence = max(.08, .1 * excursion)
     peaks, _ = find_peaks(smooth, distance=max(1, round(rate * .12)), prominence=prominence)
     valleys, _ = find_peaks(-smooth, distance=max(1, round(rate * .06)))
-    # Boundary closures can complete a cycle; boundary openings cannot.
+    # границы циклов
     valleys = np.r_[0, valleys, len(smooth) - 1]
     accepted = []
-    closure_limit = .45  # fingertip contact/near-contact in palm units
+    closure_limit = .45  # порог смыкания пальцев
     for peak in peaks:
         before = valleys[valleys < peak]
         after = valleys[valleys > peak]
@@ -90,7 +88,7 @@ def analyze_tapping(samples, record_start, record_end):
     intervals = np.diff(peak_times)
     frequency = float(1 / intervals.mean())
     cv = float(intervals.std() / intervals.mean() * 100)
-    # Centering avoids numerical loss when capture timestamps are absolute.
+    # центрируем отсчеты времени чтоб не терять точность
     slope, initial = np.polyfit(peak_times - peak_times[0], peak_amp, 1)
     final = float(initial + slope * (peak_times[-1] - peak_times[0]))
     if initial <= .08 or final <= 0:

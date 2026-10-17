@@ -1,22 +1,20 @@
-"""Landmark-level virtual AAC user for hardware-free end-to-end gaze tests.
-
-A 3D head (two 12 mm eyeballs, canthi, lids, nose tip) is rotated by head pose,
-the irises by eye-in-head rotation, then perspective-projected into a mirrored
-640x480 image with per-landmark pixel noise. Samples are produced exactly as
-gaze_capture produces them: telemetry ratios and tracking features, EMA-smoothed.
-"""
-
+# синтетический пользователь для отладки без камеры
 import numpy as np
 
 from gaze_engine import GazeSignalFilter, gaze_features, tracking_features
 
-LANDMARKS = 478
-FIXATE_MESSAGE = 'Фиксируйте взгляд на слове или стрелке до заполнения шкалы.'
-NO_FACE_MESSAGE = 'Держите лицо в кадре и смотрите на экран.'
+landmarks_count = 478
+fixate_msg = 'Фиксируйте взгляд на слове или стрелке до заполнения шкалы.'
+no_face_msg = 'Держите лицо в кадре и смотрите на экран.'
+
+# для обратной совместимости
+LANDMARKS = landmarks_count
+FIXATE_MESSAGE = fixate_msg
+NO_FACE_MESSAGE = no_face_msg
 
 
 def screen_angles(point):
-    """Normalized window position -> gaze yaw/pitch in degrees (60 cm viewing)."""
+    # перевод координат окна в углы обзора
     return np.array([(point[0] - 0.5) * 30.0, (point[1] - 0.5) * 20.0])
 
 
@@ -29,7 +27,7 @@ def _rotation(yaw, pitch):
 
 def face_landmarks(gaze=(0.0, 0.0), head=(0.0, 0.0), blink=False, iris_gain=1.0, nose_depth=30.0,
                    noise=0.0, rng=None, distance=600.0):
-    points = np.zeros((LANDMARKS, 3))
+    points = np.zeros((landmarks_count, 3))
     eyes = ((-32, (468, 133, 33, 159, 145), (160, 158, 153, 144)),
             (32, (473, 362, 263, 386, 374), (385, 387, 373, 380)))
     eye_yaw, eye_pitch = np.radians(np.subtract(gaze, head))
@@ -57,7 +55,7 @@ def face_landmarks(gaze=(0.0, 0.0), head=(0.0, 0.0), blink=False, iris_gain=1.0,
 
 
 class VirtualUser:
-    """Looks at window points with natural head participation and drift."""
+    # эмуляция взгляда и движений головы
 
     def __init__(self, seed=0, head_gain=0.3, noise=0.25, iris_gain=1.0, nose_depth=30.0,
                  micro_motion=0.15, fps=30.0, start=1000.0):
@@ -84,7 +82,7 @@ class VirtualUser:
         if sweep:
             head = head + [5.0 * np.sin(2 * np.pi * self.time / 2.0), 4.0 * np.sin(2 * np.pi * self.time / 1.4)]
         ratios = features = None
-        message = NO_FACE_MESSAGE
+        message = no_face_msg
         if face:
             pixels = face_landmarks(gaze_angle, head, blink, self.iris_gain, self.nose_depth,
                                     self.noise, self.rng)
@@ -96,7 +94,7 @@ class VirtualUser:
                 pixels = (pixels - [320, 240]) @ rotation.T + [320, 240]
             try:
                 ratios, features = gaze_features(pixels), tracking_features(pixels)
-                message = FIXATE_MESSAGE
+                message = fixate_msg
             except ValueError as exc:
                 message = str(exc)
         ratios, smoothed, features = self.signal_filter.update(ratios, features, self.time)
@@ -105,7 +103,7 @@ class VirtualUser:
 
 
 class PageDriver:
-    """Feeds a virtual user's samples into an AACPage as the GUI poll does."""
+    # прогон кадров в страницу ввода для тестов
 
     def __init__(self, page, user):
         self.page = page
@@ -123,7 +121,6 @@ class PageDriver:
             self.badges.append(badge)
 
     def calibrate(self, max_seconds=120.0, blink_every=0, misdirect=None):
-        """Follow the highlighted button. misdirect: {(stage, index): other_index}."""
         start = self.user.time
         frame = 0
         while self.page.calibration_active:

@@ -11,15 +11,15 @@ from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions,
 from PyQt6.QtCore import QCoreApplication, QThread, Qt, pyqtSignal
 
 
-MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
-HAND_MODEL_PATH = os.path.join(MODELS_DIR, "hand_landmarker.task")
-HAND_MODEL_URL = (
+models_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
+hand_model_path = os.path.join(models_dir, "hand_landmarker.task")
+hand_model_url = (
     "https://storage.googleapis.com/mediapipe-models/"
     "hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
 )
-CAMERA_STARTUP_TIMEOUT = 10.0
-CAMERA_STALL_TIMEOUT = 2.0
-HAND_CONNECTIONS = [
+camera_startup_timeout = 10.0
+camera_stall_timeout = 2.0
+hand_connections = [
     (0,1),(1,2),(2,3),(3,4),
     (0,5),(5,6),(6,7),(7,8),
     (5,9),(9,10),(10,11),(11,12),
@@ -27,19 +27,28 @@ HAND_CONNECTIONS = [
     (0,17),(13,17),(17,18),(18,19),(19,20),
 ]
 
+# для совместимости
+MODELS_DIR = models_dir
+HAND_MODEL_PATH = hand_model_path
+HAND_MODEL_URL = hand_model_url
+CAMERA_STARTUP_TIMEOUT = camera_startup_timeout
+CAMERA_STALL_TIMEOUT = camera_stall_timeout
+HAND_CONNECTIONS = hand_connections
+
 
 def ensure_model(cancelled):
+    # загрузка нейросетевой модели кисти при необходимости
     if cancelled():
         raise InterruptedError("Model download cancelled")
-    if os.path.isfile(HAND_MODEL_PATH):
+    if os.path.isfile(hand_model_path):
         return
-    os.makedirs(MODELS_DIR, exist_ok=True)
+    os.makedirs(models_dir, exist_ok=True)
     temp_path = None
     started = time.perf_counter()
     try:
-        with tempfile.NamedTemporaryFile(dir=MODELS_DIR, suffix=".part", delete=False) as output:
+        with tempfile.NamedTemporaryFile(dir=models_dir, suffix=".part", delete=False) as output:
             temp_path = output.name
-            with urllib.request.urlopen(HAND_MODEL_URL, timeout=10) as response:
+            with urllib.request.urlopen(hand_model_url, timeout=10) as response:
                 while True:
                     if cancelled():
                         raise InterruptedError("Model download cancelled")
@@ -53,12 +62,12 @@ def ensure_model(cancelled):
                 raise OSError("Downloaded model is empty")
         if cancelled():
             raise InterruptedError("Model download cancelled")
-        if not os.path.exists(HAND_MODEL_PATH):
+        if not os.path.exists(hand_model_path):
             try:
-                os.rename(temp_path, HAND_MODEL_PATH)
+                os.rename(temp_path, hand_model_path)
                 temp_path = None
             except FileExistsError:
-                if not os.path.isfile(HAND_MODEL_PATH):
+                if not os.path.isfile(hand_model_path):
                     raise
     finally:
         if temp_path is not None:
@@ -83,7 +92,7 @@ class CaptureWorker(QThread):
         self._record_start = None
         self._record_end = None
         self._read_wait_since = None
-        self._read_timeout = CAMERA_STARTUP_TIMEOUT
+        self._read_timeout = camera_startup_timeout
         self.phase = "starting"
         self.phase_started = time.perf_counter()
 
@@ -115,7 +124,7 @@ class CaptureWorker(QThread):
             if self.isInterruptionRequested():
                 return
             options = HandLandmarkerOptions(
-                base_options=BaseOptions(model_asset_path=HAND_MODEL_PATH),
+                base_options=BaseOptions(model_asset_path=hand_model_path),
                 num_hands=1,
                 running_mode=RunningMode.VIDEO,
                 min_hand_detection_confidence=0.7,
@@ -152,22 +161,22 @@ class CaptureWorker(QThread):
                     break
                 with self._lock:
                     self._read_wait_since = time.perf_counter()
-                    self._read_timeout = CAMERA_STALL_TIMEOUT if has_frame else CAMERA_STARTUP_TIMEOUT
+                    self._read_timeout = camera_stall_timeout if has_frame else camera_startup_timeout
                 self._set_phase("camera read")
                 ret, frame = capture.read()
                 acquired = time.perf_counter()
                 if self.isInterruptionRequested():
                     break
-                if not has_frame and acquired - camera_started > CAMERA_STARTUP_TIMEOUT:
+                if not has_frame and acquired - camera_started > camera_startup_timeout:
                     raise TimeoutError("Camera stopped delivering frames during startup (10-second first-frame timeout)")
                 if not ret:
                     reference = last_frame if has_frame else camera_started
-                    timeout = CAMERA_STALL_TIMEOUT if has_frame else CAMERA_STARTUP_TIMEOUT
+                    timeout = camera_stall_timeout if has_frame else camera_startup_timeout
                     if acquired - reference > timeout:
                         raise TimeoutError("Camera stopped delivering frames")
                     self.msleep(10)
                     continue
-                if has_frame and acquired - last_frame > CAMERA_STALL_TIMEOUT:
+                if has_frame and acquired - last_frame > camera_stall_timeout:
                     raise TimeoutError("Camera delivery stalled")
                 if self._record_start is not None and acquired - self._record_start > self.duration:
                     self.reason = "deadline"
@@ -177,7 +186,7 @@ class CaptureWorker(QThread):
                 has_frame = True
                 with self._lock:
                     self._read_wait_since = None
-                    self._read_timeout = CAMERA_STALL_TIMEOUT
+                    self._read_timeout = camera_stall_timeout
                 if preview_start is None:
                     preview_start = acquired
                 frame = cv2.flip(frame, 1)
@@ -191,7 +200,7 @@ class CaptureWorker(QThread):
                 if result.hand_landmarks:
                     landmarks = result.hand_landmarks[0]
                     pts = [(int(lm.x * w), int(lm.y * h)) for lm in landmarks]
-                    for a, b in HAND_CONNECTIONS:
+                    for a, b in hand_connections:
                         cv2.line(frame, pts[a], pts[b], (184, 163, 148), 1, cv2.LINE_AA)
                     for px, py in pts:
                         cv2.circle(frame, (px, py), 2, (246, 130, 59), -1, cv2.LINE_AA)

@@ -1,8 +1,4 @@
-"""Small, immutable session snapshots and off-GUI research evidence inference.
-
-Weights are user-supplied ontology heuristics, not calibrated likelihoods.
-The output is an evidence index and cannot establish a clinical diagnosis.
-"""
+# сбор результатов тестов и логический вывод
 
 from copy import deepcopy
 from datetime import datetime
@@ -13,9 +9,9 @@ import networkx as nx
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
 
-MODULE_NAMES = {'tremor': 'ТРЕМОР', 'facial': 'НЕЙРОМИМИКА', 'voice': 'ГОЛОС',
+module_names = {'tremor': 'ТРЕМОР', 'facial': 'НЕЙРОМИМИКА', 'voice': 'ГОЛОС',
                 'motor': 'МОТОРИКА', 'rppg': 'ПУЛЬС (rPPG)'}
-BIOMARKERS = {
+biomarkers = {
     'TREMOR_REST_4_6HZ': ('Пик движения 4,0–6,5 Гц', 'tremor'),
     'TREMOR_ACTION_6_12HZ': ('Пик движения 6,5–12 Гц', 'tremor'),
     'MOTOR_DECREMENT_HIGH': ('Декремент амплитуды <−20%', 'motor'),
@@ -26,7 +22,7 @@ BIOMARKERS = {
     'TACHYCARDIA_RESTING': ('Камерная ЧСС >95 уд/мин', 'rppg'),
     'BRADYCARDIA_RESTING': ('Камерная ЧСС <60 уд/мин', 'rppg'),
 }
-HYPOTHESES = {
+hypotheses = {
     'SYNDROME_PARKINSONIAN': 'Экстрапирамидный / паркинсонический паттерн',
     'SYNDROME_ESSENTIAL_TREMOR': 'Постуральный тремор: дифференциальная оценка',
     'SYNDROME_CENTRAL_STROKE': 'Центральная причина асимметрии: проверка',
@@ -34,7 +30,7 @@ HYPOTHESES = {
     'SYNDROME_AUTONOMIC_DYSREG': 'Изменение ЧСС: нагрузка / регуляция',
     'SYNDROME_PHYSIOLOGICAL': 'Без сработавших порогов — не исключение патологии',
 }
-RELATIONS = (
+relations = (
     ('TREMOR_REST_4_6HZ', 'SYNDROME_PARKINSONIAN', 'SUGGESTS', .85),
     ('MOTOR_DECREMENT_HIGH', 'SYNDROME_PARKINSONIAN', 'SUGGESTS', .90),
     ('VOICE_JITTER_ELEVATED', 'SYNDROME_PARKINSONIAN', 'CORRELATES', .65),
@@ -45,20 +41,28 @@ RELATIONS = (
     ('FACE_COMPLETE_PARESIS', 'SYNDROME_BELLS_PALSY', 'STRONGLY_SUGGESTS', .92),
     ('TACHYCARDIA_RESTING', 'SYNDROME_AUTONOMIC_DYSREG', 'SUGGESTS', .70),
 )
-SCHEMAS = {
+schemas = {
     'tremor': {'f_dom': 'dominant_freq', 'concentration': 'concentration', 'rms': 'rms_px'},
     'facial': {'asi': 'asymmetry_index', 'smile': 'smile_imbalance', 'brow': 'brow_imbalance'},
     'voice': {'f0': 'f0', 'jitter': 'jitter_local', 'shimmer': 'shimmer_local', 'hnr': 'hnr'},
     'motor': {'tap_frequency': 'tap_frequency', 'decrement': 'amplitude_decrement', 'rhythm_cv': 'rhythm_cv'},
     'rppg': {'bpm': 'bpm', 'concentration': 'concentration'},
 }
-UNITS = {
+units = {
     'tremor': {'f_dom': 'Гц', 'concentration': '%', 'rms': 'пикс.'},
     'facial': {'asi': '%', 'smile': '%', 'brow': '%'},
     'voice': {'f0': 'Гц', 'jitter': '%', 'shimmer': '%', 'hnr': 'дБ'},
     'motor': {'tap_frequency': 'Гц', 'decrement': '%', 'rhythm_cv': '%'},
     'rppg': {'bpm': 'уд/мин', 'concentration': '%', 'roi_spread': 'уд/мин', 'coverage': 'доля'},
 }
+
+# совместимость
+MODULE_NAMES = module_names
+BIOMARKERS = biomarkers
+HYPOTHESES = hypotheses
+RELATIONS = relations
+SCHEMAS = schemas
+UNITS = units
 
 
 def standardize(module, results):
@@ -170,7 +174,7 @@ def build_synthesis(snapshot, revision=0):
     missing = [MODULE_NAMES[k] for k in MODULE_NAMES if k not in snapshot]
     status = ('empty' if not snapshot else 'flagged' if active else 'limited' if limited
               else 'no_flags')
-    # No edge can prove "no pathology"; never manufacture a confidence for it.
+    # если патологий нет ставим норму
     if status == 'no_flags':
         graph.add_node('SYNDROME_PHYSIOLOGICAL', **baseline.nodes['SYNDROME_PHYSIOLOGICAL'])
     action = 'Выполните доступные пробы в сопоставимых условиях и сохраните результаты для обсуждения с врачом.'
@@ -226,7 +230,6 @@ class InferenceWorker(QThread):
 
 
 class SessionDiagnostics(QObject):
-    """One window-owned state store; newest module result replaces its predecessor."""
     updated = pyqtSignal(object)
     pending = pyqtSignal(int)
     failed = pyqtSignal(str)
