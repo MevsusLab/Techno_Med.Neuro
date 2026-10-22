@@ -1,42 +1,27 @@
-# Environment & Virtualenv
 .venv/
 venv/
 env/
 ENV/
-
-# Python bytecode & cache
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-
-# Testing & Coverage
 tests/
 .pytest_cache/
 .coverage
 htmlcov/
-
-# Data & State files
 *.json
 *.csv
 *.tsv
-
-# Documents, Exports & Reports
 *.docx
 *.pdf
 *.log
 *.tmp
-
-# IDE & Editor settings
 .vscode/
 .idea/
 *.sublime-project
 *.sublime-workspace
-
-# OS artifacts
 Thumbs.db
 Desktop.ini
 .DS_Store
-
-# Notes
 /IDEA.md
