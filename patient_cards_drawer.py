@@ -13,7 +13,7 @@ class MiniPatientGraphWidget(QWidget):
         self.topology = topology or {'nodes': [], 'edges': []}
         self.setFixedHeight(95)
         self.setMinimumWidth(320)
-        self.setStyleSheet('background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 0px;')
+        self.setStyleSheet('background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px;')
 
     def set_topology(self, topology):
         self.topology = topology or {'nodes': [], 'edges': []}
@@ -109,14 +109,14 @@ class NewPatientDialog(QDialog):
         self.setFixedSize(420, 395)
         self.setModal(True)
         self.setStyleSheet('''
-            QDialog { background: #FFFFFF; border: 1px solid #0F172A; border-radius: 0px; }
+            QDialog { background: #FFFFFF; border: 1px solid #0F172A; border-radius: 8px; }
             QLabel { color: #0F172A; font-family: 'Segoe UI'; font-size: 8.5pt; font-weight: 500; }
             QLineEdit {
                 background: #FFFFFF;
                 color: #0F172A;
                 border: 1px solid #CBD5E1;
                 padding: 4px 8px;
-                border-radius: 0px;
+                border-radius: 5px;
                 font-family: 'Segoe UI';
                 font-size: 9.5pt;
                 min-height: 28px;
@@ -127,7 +127,7 @@ class NewPatientDialog(QDialog):
                 color: #0F172A;
                 border: 1px solid #CBD5E1;
                 padding: 6px 14px;
-                border-radius: 0px;
+                border-radius: 5px;
                 font-family: 'Segoe UI';
                 font-size: 8.5pt;
                 font-weight: bold;
@@ -219,14 +219,14 @@ class PasswordPromptDialog(QDialog):
         self.setFixedSize(380, 200)
         self.setModal(True)
         self.setStyleSheet('''
-            QDialog { background: #FFFFFF; border: 1px solid #0F172A; border-radius: 0px; }
+            QDialog { background: #FFFFFF; border: 1px solid #0F172A; border-radius: 8px; }
             QLabel { color: #0F172A; font-family: 'Segoe UI'; font-size: 8.5pt; }
             QLineEdit {
                 background: #FFFFFF;
                 color: #0F172A;
                 border: 1px solid #CBD5E1;
                 padding: 4px 8px;
-                border-radius: 0px;
+                border-radius: 5px;
                 font-family: 'Segoe UI';
                 font-size: 9.5pt;
                 min-height: 28px;
@@ -237,7 +237,7 @@ class PasswordPromptDialog(QDialog):
                 color: #0F172A;
                 border: 1px solid #CBD5E1;
                 padding: 6px 14px;
-                border-radius: 0px;
+                border-radius: 5px;
                 font-family: 'Segoe UI';
                 font-size: 8.5pt;
                 font-weight: bold;
@@ -299,9 +299,9 @@ class PatientGraphCard(QFrame):
         self.is_unlocked = not patient_graph.has_password(patient_id)
         self.setObjectName('patientCard')
         self.setStyleSheet('''
-            QFrame#patientCard { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 0px; }
+            QFrame#patientCard { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 8px; }
             QLabel { color: #0F172A; background: transparent; border: none; font-family: 'Segoe UI'; }
-            QPushButton { background: #FFFFFF; color: #1D4ED8; border: 1px solid #CBD5E1; padding: 4px 8px; border-radius: 0px; font-family: 'Segoe UI'; font-size: 8pt; font-weight: bold; }
+            QPushButton { background: #FFFFFF; color: #1D4ED8; border: 1px solid #CBD5E1; padding: 4px 8px; border-radius: 5px; font-family: 'Segoe UI'; font-size: 8pt; font-weight: bold; }
             QPushButton:hover { border-color: #2563EB; background: #F8FAFC; }
         ''')
 
@@ -323,7 +323,7 @@ class PatientGraphCard(QFrame):
         self.header_label = self.name_label
 
         self.active_badge = QLabel('АКТИВЕН')
-        self.active_badge.setStyleSheet('color: #1D4ED8; background: #EFF6FF; border: 1px solid #93C5FD; font-family: \'Segoe UI\'; font-size: 7.5pt; font-weight: bold; padding: 1px 6px; border-radius: 0px;')
+        self.active_badge.setStyleSheet('color: #1D4ED8; background: #EFF6FF; border: 1px solid #93C5FD; font-family: \'Segoe UI\'; font-size: 7.5pt; font-weight: bold; padding: 1px 6px; border-radius: 4px;')
         header_row.addWidget(self.active_badge)
         self.layout.addLayout(header_row)
 
@@ -409,7 +409,7 @@ class PatientGraphCard(QFrame):
 
         if self.is_unlocked:
             self.status_badge.setText('ОТКРЫТО')
-            self.status_badge.setStyleSheet('color: #15803D; background: #DCFCE7; border: 1px solid #86EFAC; font-family: \'Segoe UI\'; font-size: 7.5pt; font-weight: bold; padding: 1px 6px; border-radius: 0px;')
+            self.status_badge.setStyleSheet('color: #15803D; background: #DCFCE7; border: 1px solid #86EFAC; font-family: \'Segoe UI\'; font-size: 7.5pt; font-weight: bold; padding: 1px 6px; border-radius: 4px;')
             self.locked_box.hide()
             self.unlocked_box.show()
 
@@ -446,7 +446,7 @@ class PatientGraphCard(QFrame):
             self.lock_button.setVisible(summary['is_password_protected'])
         else:
             self.status_badge.setText('ЗАКРЫТО')
-            self.status_badge.setStyleSheet('color: #B91C1C; background: #FEE2E2; border: 1px solid #FCA5A5; font-family: \'Segoe UI\'; font-size: 7.5pt; font-weight: bold; padding: 1px 6px; border-radius: 0px;')
+            self.status_badge.setStyleSheet('color: #B91C1C; background: #FEE2E2; border: 1px solid #FCA5A5; font-family: \'Segoe UI\'; font-size: 7.5pt; font-weight: bold; padding: 1px 6px; border-radius: 4px;')
             self.info_label.setText(f"Узлов сессий в графе: {s_count} | Данные и диагнозы скрыты паролем")
             self.unlocked_box.hide()
             self.locked_box.show()
@@ -499,7 +499,7 @@ class PatientCardsDrawer(QFrame):
                 border-top: none;
                 border-right: none;
                 border-bottom: none;
-                border-radius: 0px;
+                border-radius: 5px;
             }
             QLabel { color: #0F172A; background: transparent; font-family: 'Segoe UI'; }
             QScrollArea { background: #FFFFFF; border: none; }
@@ -508,7 +508,7 @@ class PatientCardsDrawer(QFrame):
                 color: #0F172A;
                 border: 1px solid #CBD5E1;
                 padding: 5px 12px;
-                border-radius: 0px;
+                border-radius: 5px;
                 font-family: 'Segoe UI';
                 font-size: 8.5pt;
                 font-weight: bold;
@@ -546,7 +546,7 @@ class PatientCardsDrawer(QFrame):
                 font-size: 13px;
                 font-weight: bold;
                 text-align: center;
-                border-radius: 0px;
+                border-radius: 5px;
             }
             QPushButton:hover {
                 background: #EF4444;

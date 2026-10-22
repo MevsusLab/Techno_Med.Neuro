@@ -1,0 +1,53 @@
+MIT License
+
+Copyright (c) 2026 Andrey Goncharov (Гончаров Андрей Игоревич), MevsusLab / TechnoMedNeuro
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+MEDICAL & RESEARCH DISCLAIMER / МЕДИЦИНСКОЕ ПРЕДУПРЕЖДЕНИЕ
+================================================================================
+
+1. English:
+The "TechnoMedNeuro" software suite is an educational, scientific, and research
+prototype developed for contactless neurological biomarker quantification,
+clinical decision support (CDSS) modeling, and assistive communication (AAC).
+It is NOT a certified medical device and is NOT intended to replace professional
+medical advice, clinical diagnosis, or treatment by a qualified healthcare
+provider. All calculated metrics, spectral parameters, and graph-based syndrome
+hypotheses are provided strictly for informational and research purposes.
+
+2. Русский (Перевод условий лицензии MIT и клиническое ограничение):
+Данная лицензия разрешает лицам, получившим копию данного программного
+обеспечения и сопутствующей документации (в дальнейшем именуемыми «Программное
+обеспечение»), безвозмездно использовать Программное обеспечение без ограничений,
+включая неограниченное право на использование, копирование, изменение, слияние,
+публикацию, распространение, сублицензирование и/или продажу копий Программного
+обеспечения, при соблюдении следующего условия: уведомление об авторском праве
+и данные условия должны быть включены во все копии или значимые части
+Программного обеспечения.
+
+ПРОГРАММНЫЙ КОМПЛЕКС «TECHNOMEDNEURO» ЯВЛЯЕТСЯ НАУЧНО-ИССЛЕДОВАТЕЛЬСКИМ И
+ОБРАЗОВАТЕЛЬНЫМ ПРОТОТИПОМ. СИСТЕМА НЕ ЯВЛЯЕТСЯ СЕРТИФИЦИРОВАННЫМ МЕДИЦИНСКИМ
+ИЗДЕЛИЕМ И НЕ ЗАМЕНЯЕТ ОЧНУЮ КОНСУЛЬТАЦИЮ, ДИАГНОСТИКУ ИЛИ ЛЕЧЕНИЕ У
+КВАЛИФИЦИРОВАННОГО ВРАЧА-СПЕЦИАЛИСТА. ПРОГРАММНОЕ ОБЕСПЕЧЕНИЕ ПРЕДОСТАВЛЯЕТСЯ
+«КАК ЕСТЬ», БЕЗ КАКИХ-ЛИБО ГАРАНТИЙ, ЯВНЫХ ИЛИ ПОДРАЗУМЕВАЕМЫХ. АВТОРЫ И
+ПРАВООБЛАДАТЕЛИ НЕ НЕСУТ ОТВЕТСТВЕННОСТИ ЗА ЛЮБЫЕ ПРЕТЕНЗИИ, УЩЕРБ ИЛИ ИНУЮ
+ОТВЕТСТВЕННОСТЬ, ВОЗНИКАЮЩИЕ ВСЛЕДСТВИЕ ИСПОЛЬЗОВАНИЯ ДАННОГО ПРОГРАММНОГО
+ОБЕСПЕЧЕНИЯ.

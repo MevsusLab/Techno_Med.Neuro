@@ -213,11 +213,11 @@ class ProtocolPanel(QFrame):
         self.setObjectName('protocolPanel')
         self.setMinimumSize(0, 0)
         self.setStyleSheet('''
-            QFrame#protocolPanel { background: #0B132B; border: 1px solid #1E293B; border-radius: 0px; }
+            QFrame#protocolPanel { background: #0B132B; border: 1px solid #1E293B; border-radius: 8px; }
             QFrame#protocolPanel QLabel { color: #E2E8F0; background: transparent; border: none; }
             QFrame#protocolPanel QWidget#protocolBody { background: #0B132B; }
             QFrame#protocolPanel QScrollArea { border: none; background: #0B132B; }
-            QFrame#protocolPanel QPushButton { color: #BFDBFE; background: #0F172A; border: 1px solid #334155; border-radius: 0px; padding: 3px 6px; }
+            QFrame#protocolPanel QPushButton { color: #BFDBFE; background: #0F172A; border: 1px solid #334155; border-radius: 5px; padding: 3px 6px; }
             QFrame#protocolPanel QPushButton:hover { background: #1E293B; color: #FFFFFF; }
         ''')
         layout = QVBoxLayout(self)

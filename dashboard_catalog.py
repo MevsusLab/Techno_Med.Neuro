@@ -158,7 +158,7 @@ class ModuleCard(QFrame):
         self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setStyleSheet('''
-            QFrame#modulePreviewCard { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 0px; }
+            QFrame#modulePreviewCard { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 8px; }
             QFrame#modulePreviewCard:hover, QFrame#modulePreviewCard:focus { border: 1px solid #2563EB; }
             QFrame#modulePreviewCard QLabel { background: transparent; border: none; border-radius: 0px; }
         ''')
@@ -225,7 +225,7 @@ class DashboardCatalog(QScrollArea):
         self.setStyleSheet('''
             QScrollArea#dashboardCatalog { background: #FFFFFF; border: none; border-radius: 0px; }
             QScrollBar:vertical { background: #F8FAFC; width: 8px; margin: 0px; }
-            QScrollBar::handle:vertical { background: #CBD5E1; min-height: 24px; border-radius: 0px; }
+            QScrollBar::handle:vertical { background: #CBD5E1; min-height: 24px; border-radius: 4px; }
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
             QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: #F8FAFC; }
         ''')

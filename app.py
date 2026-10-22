@@ -95,18 +95,18 @@ def make_status_badge(text, color=TEXT_MUTED):
     lbl.setFont(f_mono(8, True))
     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
     lbl.setFixedHeight(18)
-    lbl.setStyleSheet(f"background: {color}; color: #FFFFFF; padding: 0 6px; border: none;")
+    lbl.setStyleSheet(f"background: {color}; color: #FFFFFF; padding: 0 6px; border: none; border-radius: 4px;")
     return lbl
 
 
 def set_badge(lbl, text, color):
     lbl.setText(text)
-    lbl.setStyleSheet(f"background: {color}; color: #FFFFFF; padding: 0 6px; border: none;")
+    lbl.setStyleSheet(f"background: {color}; color: #FFFFFF; padding: 0 6px; border: none; border-radius: 4px;")
 
 
 def panel(title=""):
     frame = QFrame()
-    frame.setStyleSheet(f"QFrame {{ background: {BG}; border: 1px solid {BORDER}; }}")
+    frame.setStyleSheet(f"QFrame {{ background: {BG}; border: 1px solid {BORDER}; border-radius: 8px; }}")
     layout = QVBoxLayout(frame)
     layout.setContentsMargins(10, 8, 10, 10)
     layout.setSpacing(6)
@@ -127,7 +127,7 @@ def panel(title=""):
 
 def panel_with_badge(title, badge_text, badge_color=TEXT_MUTED):
     frame = QFrame()
-    frame.setStyleSheet(f"QFrame {{ background: {BG}; border: 1px solid {BORDER}; }}")
+    frame.setStyleSheet(f"QFrame {{ background: {BG}; border: 1px solid {BORDER}; border-radius: 8px; }}")
     layout = QVBoxLayout(frame)
     layout.setContentsMargins(10, 8, 10, 10)
     layout.setSpacing(6)
@@ -151,7 +151,7 @@ def feed_panel(label="VIDEO FEED"):
     frame = QFrame()
     frame.setMinimumSize(400, 300)
     frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-    frame.setStyleSheet(f"QFrame {{ background: #0F172A; border: 1px solid {BORDER}; }}")
+    frame.setStyleSheet(f"QFrame {{ background: #0F172A; border: 1px solid {BORDER}; border-radius: 8px; }}")
     lay = QVBoxLayout(frame)
     lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
     lbl = QLabel(label)
@@ -225,7 +225,7 @@ def graph_area(title="SIGNAL"):
     frame = QFrame()
     frame.setMinimumHeight(140)
     frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-    frame.setStyleSheet(f"QFrame {{ background: {BG_ALT}; border: 1px solid {BORDER}; }}")
+    frame.setStyleSheet(f"QFrame {{ background: {BG_ALT}; border: 1px solid {BORDER}; border-radius: 8px; }}")
     lay = QVBoxLayout(frame)
     lay.setContentsMargins(8, 6, 8, 6)
     lbl = QLabel(title)
@@ -249,13 +249,13 @@ def cmd_button(text, primary=True):
     btn.setFixedHeight(30)
     if primary:
         btn.setStyleSheet(f"""
-            QPushButton {{ background: {NAVY}; color: #FFFFFF; border: 1px solid {NAVY}; padding: 0 16px; }}
+            QPushButton {{ background: {NAVY}; color: #FFFFFF; border: 1px solid {NAVY}; padding: 0 16px; border-radius: 6px; }}
             QPushButton:hover {{ background: {NAVY_MID}; }}
             QPushButton:disabled {{ background: #94A3B8; border-color: #94A3B8; }}
         """)
     else:
         btn.setStyleSheet(f"""
-            QPushButton {{ background: {BG}; color: {NAVY}; border: 1px solid {BORDER}; padding: 0 16px; }}
+            QPushButton {{ background: {BG}; color: {NAVY}; border: 1px solid {BORDER}; padding: 0 16px; border-radius: 6px; }}
             QPushButton:hover {{ background: {BG_ALT}; }}
             QPushButton:disabled {{ color: #CBD5E1; }}
         """)
@@ -375,7 +375,7 @@ class NavBar(QWidget):
                 color: #FFFFFF;
                 border: 1px solid #60A5FA;
                 padding: 0 10px;
-                border-radius: 0px;
+                border-radius: 6px;
                 font-family: Consolas;
                 font-size: 11px;
                 font-weight: bold;
@@ -412,12 +412,12 @@ class NavBar(QWidget):
         if active:
             return f"""
                 QPushButton {{ background: #1E293B; color: #FFFFFF; border: none;
-                    border-bottom: 2px solid #3B82F6; padding: 0 14px; font-weight: bold; }}
+                    border-bottom: 2px solid #3B82F6; padding: 0 14px; font-weight: bold; border-radius: 0px; }}
             """
         return f"""
             QPushButton {{ background: transparent; color: #94A3B8; border: none;
                 border-bottom: 2px solid transparent; padding: 0 14px; }}
-            QPushButton:hover {{ color: #E2E8F0; background: #1E293B; }}
+            QPushButton:hover {{ color: #E2E8F0; background: #1E293B; border-radius: 0px; }}
         """
 
 
@@ -472,7 +472,7 @@ class DashboardPage(QWidget):
             QScrollBar::handle:vertical {{
                 background: {TEXT_MUTED};
                 min-height: 24px;
-                border-radius: 0px;
+                border-radius: 6px;
             }}
             QScrollBar::handle:vertical:hover {{
                 background: {TEXT_DIM};
@@ -2183,7 +2183,7 @@ class DwellButton(QPushButton):
         self.setFont(QFont('Consolas', 11 if navigation else 15, QFont.Weight.Bold))
         self.setStyleSheet(f"""
             QPushButton {{ background: {BG}; color: {NAVY}; border: 1px solid {NAVY_MID};
-                border-radius: 0px; padding: 3px 5px; }}
+                border-radius: 6px; padding: 3px 5px; }}
             QPushButton:hover {{ background: {BG_ALT}; }}
         """)
         self.navigation_size_hint = super().sizeHint() if navigation else None
@@ -3265,7 +3265,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("TechnoMedNeuro — Интеллектуальная система цифровой нейродиагностики и мониторинговых модулей")
         self.setMinimumSize(1200, 750)
         self.resize(1400, 860)
-        self.setStyleSheet(f"QMainWindow {{ background: {BG}; }} * {{ border-radius: 0px; }}")
+        self.setStyleSheet(f"QMainWindow {{ background: {BG}; }}")
 
         central = QWidget()
         self.setCentralWidget(central)

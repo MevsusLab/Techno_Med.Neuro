@@ -286,17 +286,17 @@ class CDSSDashboard(QWidget):
         self.unlocked_patients = set()
         self.setFixedHeight(260)
         self.setStyleSheet('''
-            QFrame#cdssPanel { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 0px; }
+            QFrame#cdssPanel { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 8px; }
             QLabel { color: #475569; background: transparent; border: none; }
             QScrollArea { background: #FFFFFF; border: none; }
-            QPushButton { background: #FFFFFF; color: #1D4ED8; border: 1px solid #CBD5E1; padding: 2px 6px; border-radius: 0px; }
+            QPushButton { background: #FFFFFF; color: #1D4ED8; border: 1px solid #CBD5E1; padding: 2px 6px; border-radius: 5px; }
             QPushButton:hover { border-color: #2563EB; }
             QPushButton:disabled { color: #94A3B8; }
-            QComboBox { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; padding: 1px 6px; border-radius: 0px; }
+            QComboBox { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; padding: 1px 6px; border-radius: 5px; }
             QComboBox:hover { border-color: #2563EB; }
-            QComboBox QAbstractItemView { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; selection-background-color: #2563EB; selection-color: #FFFFFF; border-radius: 0px; }
-            QProgressBar { background: #F8FAFC; color: #0F172A; border: 1px solid #E2E8F0; border-radius: 0px; }
-            QProgressBar::chunk { background: #2563EB; border-radius: 0px; }
+            QComboBox QAbstractItemView { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; selection-background-color: #2563EB; selection-color: #FFFFFF; border-radius: 5px; }
+            QProgressBar { background: #F8FAFC; color: #0F172A; border: 1px solid #E2E8F0; border-radius: 4px; }
+            QProgressBar::chunk { background: #2563EB; border-radius: 4px; }
         ''')
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
